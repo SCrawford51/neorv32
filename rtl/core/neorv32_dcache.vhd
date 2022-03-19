@@ -1,5 +1,5 @@
 -- #################################################################################################
--- # << NEORV32 - Processor-Internal Instruction Cache >>                                          #
+-- # << NEORV32 - Processor-Internal Data Cache >>                                          #
 -- # ********************************************************************************************* #
 -- # Direct mapped (DCACHE_NUM_SETS = 1) or 2-way set-associative (DCACHE_NUM_SETS = 2).           #
 -- # Least recently used replacement policy (if DCACHE_NUM_SETS > 1).                              #
