@@ -128,9 +128,126 @@ architecture neorv32_dcache_memory_rtl of neorv32_dcache_memory is
   
 begin
 
-  --TODO: Copy and modify remaining iCache code below:--
+	-- Access Address Decomposition -----------------------------------------------------------
+  -- -------------------------------------------------------------------------------------------
+  host_acc_addr.tag    <= host_addr_i(31 downto 31-(cache_tag_size_c-1));
+  host_acc_addr.index  <= host_addr_i(31-cache_tag_size_c downto 2+cache_offset_size_c);
+  host_acc_addr.offset <= host_addr_i(2+(cache_offset_size_c-1) downto 2); -- discard byte offset
+
+  ctrl_acc_addr.tag    <= ctrl_addr_i(31 downto 31-(cache_tag_size_c-1));
+  ctrl_acc_addr.index  <= ctrl_addr_i(31-cache_tag_size_c downto 2+cache_offset_size_c);
+  ctrl_acc_addr.offset <= ctrl_addr_i(2+(cache_offset_size_c-1) downto 2); -- discard byte offset
 
 
-  --TODO: Copy and modify remaining iCache code above:--
+	-- Cache Access History -------------------------------------------------------------------
+  -- -------------------------------------------------------------------------------------------
+  access_history: process(clk_i)
+  begin
+    if rising_edge(clk_i) then
+      history.re_ff <= host_re_i;
+      if (invalidate_i = '1') then -- invalidate whole cache
+        history.last_used_set <= (others => '1');
+      elsif (history.re_ff = '1') and (or_reduce_f(hit) = '1') and (ctrl_en_i = '0') then -- store last accessed set that caused a hit
+        history.last_used_set(to_integer(unsigned(cache_index))) <= not hit(0);
+      end if;
+      history.to_be_replaced <= history.last_used_set(to_integer(unsigned(cache_index)));
+    end if;
+  end process access_history;
+
+  -- which set is going to be replaced? -> opposite of last used set = least recently used set --
+  set_select <= '0' when (DCACHE_NUM_SETS = 1) else (not history.to_be_replaced);
+
+
+	-- Status flag memory ---------------------------------------------------------------------
+  -- -------------------------------------------------------------------------------------------
+  status_memory: process(clk_i)
+  begin
+    if rising_edge(clk_i) then
+      -- write access --
+      if (invalidate_i = '1') then -- invalidate whole cache
+        valid_flag_s0 <= (others => '0');
+        valid_flag_s1 <= (others => '0');
+      elsif (ctrl_en_i = '1') then
+        if (ctrl_invalid_i = '1') then -- make current block invalid
+          if (set_select = '0') then
+            valid_flag_s0(to_integer(unsigned(cache_index))) <= '0';
+          else
+            valid_flag_s1(to_integer(unsigned(cache_index))) <= '0';
+          end if;
+        elsif (ctrl_valid_i = '1') then -- make current block valid
+          if (set_select = '0') then
+            valid_flag_s0(to_integer(unsigned(cache_index))) <= '1';
+          else
+            valid_flag_s1(to_integer(unsigned(cache_index))) <= '1';
+          end if;
+        end if;
+      end if;
+      -- read access (sync) --
+      valid(0) <= valid_flag_s0(to_integer(unsigned(cache_index)));
+      valid(1) <= valid_flag_s1(to_integer(unsigned(cache_index)));
+    end if;
+  end process status_memory;
+
+
+	-- Tag memory -----------------------------------------------------------------------------
+  -- -------------------------------------------------------------------------------------------
+  tag_memory: process(clk_i)
+  begin
+    if rising_edge(clk_i) then
+      if (ctrl_en_i = '1') and (ctrl_tag_we_i = '1') then -- write access
+        if (set_select = '0') then
+          tag_mem_s0(to_integer(unsigned(cache_index))) <= ctrl_acc_addr.tag;
+        else
+          tag_mem_s1(to_integer(unsigned(cache_index))) <= ctrl_acc_addr.tag;
+        end if;
+      end if;
+      tag(0) <= tag_mem_s0(to_integer(unsigned(cache_index)));
+      tag(1) <= tag_mem_s1(to_integer(unsigned(cache_index)));
+    end if;
+  end process tag_memory;
+
+  -- comparator --
+  comparator: process(host_acc_addr, tag, valid)
+  begin
+    hit <= (others => '0');
+    for i in 0 to DCACHE_NUM_SETS-1 loop
+      if (host_acc_addr.tag = tag(i)) and (valid(i) = '1') then
+        hit(i) <= '1';
+      end if;
+    end loop; -- i
+  end process comparator;
+
+  -- global hit --
+  hit_o <= or_reduce_f(hit);
+
+
+	-- Cache Data Memory ----------------------------------------------------------------------
+  -- -------------------------------------------------------------------------------------------
+  cache_mem_access: process(clk_i)
+  begin
+    if rising_edge(clk_i) then
+      if (cache_we = '1') then -- write access from control (full-word)
+        if (set_select = '0') or (DCACHE_NUM_SETS = 1) then
+          cache_data_memory_s0(to_integer(unsigned(cache_addr))) <= ctrl_wdata_i;
+        else
+          cache_data_memory_s1(to_integer(unsigned(cache_addr))) <= ctrl_wdata_i;
+        end if;
+      end if;
+      -- read access from host (full-word) --
+      cache_rdata(0) <= cache_data_memory_s0(to_integer(unsigned(cache_addr)));
+      cache_rdata(1) <= cache_data_memory_s1(to_integer(unsigned(cache_addr)));
+    end if;
+  end process cache_mem_access;
+
+  -- data output --
+  host_rdata_o <= cache_rdata(0) when (hit(0) = '1') or (DCACHE_NUM_SETS = 1) else cache_rdata(1);
+
+  -- cache block ram access address --
+  cache_addr <= cache_index & cache_offset;
+
+  -- cache access select --
+  cache_index  <= host_acc_addr.index  when (ctrl_en_i = '0') else ctrl_acc_addr.index;
+  cache_offset <= host_acc_addr.offset when (ctrl_en_i = '0') else ctrl_acc_addr.offset;
+  cache_we     <= '0'                  when (ctrl_en_i = '0') else ctrl_we_i;
     
 end neorv32_dcache_memory_rtl;
