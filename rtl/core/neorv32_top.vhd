@@ -648,26 +648,26 @@ begin
       -- global control --
       clk_i        => clk_i,         -- global clock, rising edge
       rstn_i       => sys_rstn,      -- global reset, low-active, async
-      clear_d      => cpu_d.fence,   -- cache clear
+      clear_i      => cpu_d.fence,   -- cache clear
       miss_o       => open,          -- cache miss
       -- host controller interface --
-      host_addr_d  => cpu_d.addr,    -- bus access address
+      host_addr_i  => cpu_d.addr,    -- bus access address
       host_rdata_o => cpu_d.rdata,   -- bus read data
-      host_wdata_d => cpu_d.wdata,   -- bus write data
-      host_ben_d   => cpu_d.ben,     -- byte enable
-      host_we_d    => cpu_d.we,      -- write enable
-      host_re_d    => cpu_d.re,      -- read enable
+      host_wdata_i => cpu_d.wdata,   -- bus write data
+      host_ben_i   => cpu_d.ben,     -- byte enable
+      host_we_i    => cpu_d.we,      -- write enable
+      host_re_i    => cpu_d.re,      -- read enable
       host_ack_o   => cpu_d.ack,     -- bus transfer acknowledge
       host_err_o   => cpu_d.err,     -- bus transfer error
       -- peripheral bus interface --
       bus_addr_o   => d_cache.addr,  -- bus access address
-      bus_rdata_d  => d_cache.rdata, -- bus read data
+      bus_rdata_i  => d_cache.rdata, -- bus read data
       bus_wdata_o  => d_cache.wdata, -- bus write data
       bus_ben_o    => d_cache.ben,   -- byte enable
       bus_we_o     => d_cache.we,    -- write enable
       bus_re_o     => d_cache.re,    -- read enable
-      bus_ack_d    => d_cache.ack,   -- bus transfer acknowledge
-      bus_err_d    => d_cache.err    -- bus transfer error
+      bus_ack_i    => d_cache.ack,   -- bus transfer acknowledge
+      bus_err_i    => d_cache.err    -- bus transfer error
     );
   end generate;
 
