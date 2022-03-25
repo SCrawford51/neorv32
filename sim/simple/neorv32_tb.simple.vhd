@@ -209,6 +209,11 @@ begin
     ICACHE_NUM_BLOCKS            => 8,             -- i-cache: number of blocks (min 2), has to be a power of 2
     ICACHE_BLOCK_SIZE            => 64,            -- i-cache: block size in bytes (min 4), has to be a power of 2
     ICACHE_ASSOCIATIVITY         => 2,             -- i-cache: associativity / number of sets (1=direct_mapped), has to be a power of 2
+    -- Data Cache --
+    DCACHE_EN                    => true,          -- implement data cache
+    DCACHE_NUM_BLOCKS            => 8,             -- d-cache: number of blocks (min 2), has to be a power of 2
+    DCACHE_BLOCK_SIZE            => 64,            -- d-cache: block size in bytes (min 4), has to be a power of 2
+    DCACHE_ASSOCIATIVITY         => 2,             -- d-cache: associativity / number of sets (1=direct_mapped), has to be a power of 2
     -- External memory interface --
     MEM_EXT_EN                   => true,          -- implement external memory bus interface?
     MEM_EXT_TIMEOUT              => 256,           -- cycles after a pending bus access auto-terminates (0 = disabled)
