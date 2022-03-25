@@ -60,6 +60,11 @@ entity neorv32_sysinfo is
     ICACHE_NUM_BLOCKS    : natural; -- i-cache: number of blocks (min 2), has to be a power of 2
     ICACHE_BLOCK_SIZE    : natural; -- i-cache: block size in bytes (min 4), has to be a power of 2
     ICACHE_ASSOCIATIVITY : natural; -- i-cache: associativity (min 1), has to be a power 2
+    -- Internal Cache memory --
+    DCACHE_EN            : boolean; -- implement instruction cache
+    DCACHE_NUM_BLOCKS    : natural; -- d-cache: number of blocks (min 2), has to be a power of 2
+    DCACHE_BLOCK_SIZE    : natural; -- d-cache: block size in bytes (min 4), has to be a power of 2
+    DCACHE_ASSOCIATIVITY : natural; -- d-cache: associativity (min 1), has to be a power 2
     -- External memory interface --
     MEM_EXT_EN           : boolean; -- implement external memory bus interface?
     MEM_EXT_BIG_ENDIAN   : boolean; -- byte order: true=big-endian, false=little-endian
@@ -137,7 +142,10 @@ begin
   sysinfo_mem(2)(04) <= bool_to_ulogic_f(MEM_EXT_BIG_ENDIAN); -- is external memory bus interface using BIG-endian byte-order?
   sysinfo_mem(2)(05) <= bool_to_ulogic_f(ICACHE_EN);         -- processor-internal instruction cache implemented?
   --
-  sysinfo_mem(2)(12 downto 06) <= (others => '0'); -- reserved
+  sysinfo_mem(2)(06) <= bool_to_ulogic_f(DCACHE_EN);         -- is data cache implemented?
+  
+  sysinfo_mem(2)(12 downto 07) <= (others => '0'); -- reserved
+  
   -- Misc --
   sysinfo_mem(2)(13) <= bool_to_ulogic_f(is_simulation_c);     -- is this a simulation?
   sysinfo_mem(2)(14) <= bool_to_ulogic_f(ON_CHIP_DEBUGGER_EN); -- on-chip debugger implemented?
@@ -167,10 +175,10 @@ begin
   sysinfo_mem(3)(11 downto 08) <= std_ulogic_vector(to_unsigned(index_size_f(ICACHE_ASSOCIATIVITY), 4)) when (ICACHE_EN = true) else (others => '0'); -- i-cache: log2(associativity)
   sysinfo_mem(3)(15 downto 12) <= "0001" when (ICACHE_ASSOCIATIVITY > 1) and (ICACHE_EN = true) else (others => '0'); -- i-cache: replacement strategy (LRU only (yet))
   --
-  sysinfo_mem(3)(19 downto 16) <= (others => '0'); -- reserved - d-cache: log2(block_size)
-  sysinfo_mem(3)(23 downto 20) <= (others => '0'); -- reserved - d-cache: log2(num_blocks)
-  sysinfo_mem(3)(27 downto 24) <= (others => '0'); -- reserved - d-cache: log2(associativity)
-  sysinfo_mem(3)(31 downto 28) <= (others => '0'); -- reserved - d-cache: replacement strategy
+  sysinfo_mem(3)(19 downto 16) <= std_ulogic_vector(to_unsigned(index_size_f(DCACHE_BLOCK_SIZE),    4)) when (DCACHE_EN = true) else (others => '0'); -- reserved - d-cache: log2(block_size)
+  sysinfo_mem(3)(23 downto 20) <= std_ulogic_vector(to_unsigned(index_size_f(DCACHE_NUM_BLOCKS),    4)) when (DCACHE_EN = true) else (others => '0'); -- reserved - d-cache: log2(num_blocks)
+  sysinfo_mem(3)(27 downto 24) <= std_ulogic_vector(to_unsigned(index_size_f(DCACHE_ASSOCIATIVITY), 4)) when (DCACHE_EN = true) else (others => '0'); -- reserved - d-cache: log2(associativity)
+  sysinfo_mem(3)(31 downto 28) <= "0001" when (DCACHE_ASSOCIATIVITY > 1) and (DCACHE_EN = true) else (others => '0'); -- reserved - d-cache: replacement strategy
 
   -- SYSINFO(4): Base address of instruction memory space --
   sysinfo_mem(4) <= ispace_base_c; -- defined in neorv32_package.vhd file
