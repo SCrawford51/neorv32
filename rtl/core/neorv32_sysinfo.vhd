@@ -60,7 +60,6 @@ entity neorv32_sysinfo is
     ICACHE_NUM_BLOCKS    : natural; -- i-cache: number of blocks (min 2), has to be a power of 2
     ICACHE_BLOCK_SIZE    : natural; -- i-cache: block size in bytes (min 4), has to be a power of 2
     ICACHE_ASSOCIATIVITY : natural; -- i-cache: associativity (min 1), has to be a power 2
-    -- Internal Cache memory --
     DCACHE_EN            : boolean; -- implement instruction cache
     DCACHE_NUM_BLOCKS    : natural; -- d-cache: number of blocks (min 2), has to be a power of 2
     DCACHE_BLOCK_SIZE    : natural; -- d-cache: block size in bytes (min 4), has to be a power of 2
