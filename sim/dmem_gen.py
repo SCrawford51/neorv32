@@ -40,7 +40,7 @@ def parse_args() -> argparse.Namespace:
 
     # Add positional/optional arguments
     parser.add_argument(
-        'cache_size',
+        '--cache_size',
         help='Size of the cache (in bytes)',
         type=int,
         default=256)
