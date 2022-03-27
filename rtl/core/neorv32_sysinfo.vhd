@@ -142,7 +142,7 @@ begin
   sysinfo_mem(2)(04) <= bool_to_ulogic_f(MEM_EXT_BIG_ENDIAN); -- is external memory bus interface using BIG-endian byte-order?
   sysinfo_mem(2)(05) <= bool_to_ulogic_f(ICACHE_EN);         -- processor-internal instruction cache implemented?
   --
-  sysinfo_mem(2)(06) <= bool_to_ulogic_f(DCACHE_EN);         -- is data cache implemented?
+  sysinfo_mem(2)(06) <= bool_to_ulogic_f(DCACHE_EN);         -- processor-internal data cache implemented?
   
   sysinfo_mem(2)(12 downto 07) <= (others => '0'); -- reserved
   
