@@ -97,7 +97,7 @@ entity neorv32_top is
     ICACHE_BLOCK_SIZE            : natural := 64;     -- i-cache: block size in bytes (min 4), has to be a power of 2
     ICACHE_ASSOCIATIVITY         : natural := 1;      -- i-cache: associativity / number of sets (1=direct_mapped), has to be a power of 2
     
-    -- Data Cache (dCACHE) --
+    -- Internal Data Cache (dCACHE) --
     DCACHE_EN                    : boolean := false;  -- implement data cache
     DCACHE_NUM_BLOCKS            : natural := 4;      -- i-cache: number of blocks (min 1), has to be a power of 2
     DCACHE_BLOCK_SIZE            : natural := 64;     -- i-cache: block size in bytes (min 4), has to be a power of 2
