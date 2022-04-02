@@ -125,10 +125,6 @@ architecture neorv32_dcache_memory_rtl of neorv32_dcache_memory is
     to_be_replaced : std_ulogic;
   end record;
   signal history : history_t;
-
-  -- FIFO signals
-  type fifo_adr is array (0 to cache_entries_c-1) of std_ulogic_vector(32 downto 0);
-  signal fifo_cnt : std_ulogic_vector(31 downto 0);
   
 begin
 
@@ -233,12 +229,8 @@ begin
       if (cache_we = '1') then -- write access from control (full-word)
         if (set_select = '0') or (DCACHE_NUM_SETS = 1) then
           cache_data_memory_s0(to_integer(unsigned(cache_addr))) <= ctrl_wdata_i;
-          fifo_adr(to_integer(unsigned(fifo_cnt))) <= cache_addr & set_select; 
-          fifo_cnt <= fifo_cnt + '1';
         else
           cache_data_memory_s1(to_integer(unsigned(cache_addr))) <= ctrl_wdata_i;
-          fifo_adr(to_integer(unsigned(fifo_cnt))) <= cache_addr & set_select; 
-          fifo_cnt <= fifo_cnt + '1';
         end if;
       end if;
       -- read access from host (full-word) --
