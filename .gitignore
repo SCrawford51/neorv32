@@ -12,6 +12,7 @@ __pycache__
 *.out
 *.hex
 *_image.vhd
+sim/neorv32_dcache_memory_tb_pkg.vhd
 
 # keep default VHDL memory images
 !rtl/core/*_image.vhd
