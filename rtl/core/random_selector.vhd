@@ -49,10 +49,10 @@ entity random_selector is
     -- -------------------------------------------------------------------------------------------
     rand_one_cnt: process(rand_data) -- count number of ones in 32-bit random data
     begin
-        ones_cnt := x"00";
+        ones_cnt <= x"00";
         for i in 0 to 31 loop
         if(rand_data(i) = '1') then
-            ones_cnt := ones_cnt + '1';
+            ones_cnt <= ones_cnt + '1';
         end if;
         end loop;
     end process rand_one_cnt;

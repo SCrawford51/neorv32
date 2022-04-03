@@ -2287,6 +2287,30 @@ package neorv32_package is
     );
   end component;
 
+  component random_selector
+    port (
+      -- Clock, rising edge active.
+      clk_i :        in  std_logic;
+      set_select_o : out std_logic;
+    );
+  end component;
+
+  component rng_mt19937
+    generic (
+      init_seed       => x"DCDCABAB",
+      force_const_mul => false
+    ); 
+    port (
+      clk       => clk_i,
+      rst       => rand_rst,
+      reseed    => '0',
+      newseed   => x"AAAACCCC",
+      out_ready => rand_ready,
+      out_valid => rand_valid,
+      out_data  => rand_data
+    );
+  end component;
+
 end neorv32_package;
 
 package body neorv32_package is
