@@ -249,5 +249,5 @@ begin
   cache_index  <= host_acc_addr.index  when (ctrl_en_i = '0') else ctrl_acc_addr.index;
   cache_offset <= host_acc_addr.offset when (ctrl_en_i = '0') else ctrl_acc_addr.offset;
   cache_we     <= '0'                  when (ctrl_en_i = '0') else ctrl_we_i;
-    
+  
 end neorv32_dcache_memory_rtl;
