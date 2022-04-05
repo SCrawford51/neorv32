@@ -73,6 +73,7 @@ architecture tb_neorv32_dcache_memory_rtl of tb_neorv32_dcache_memory is
   signal rst_gen            : std_ulogic := '0';
 
   -- testbench signals
+  signal curr_addr          : unsigned(31 downto 0)         := (others => '0');
   signal init_mem           : std_ulogic := '1';
   signal mem_busy           : std_ulogic := '0';
   signal wrt_success        : std_ulogic := '0';
@@ -144,37 +145,32 @@ begin
   -- Main control process ----------------------------------------------------------------------
   -- -------------------------------------------------------------------------------------------
   run_test : process
-    variable curr_addr: natural := 0;
   begin
     if init_mem = '1' then -- Fill cache from memory at beginning of testbench
-      curr_addr := 0;
-      for ii in 0 to cache_entries_c-1 loop
+      if curr_addr < cache_entries_c then
         wait until rising_edge(clk_gen);
         mem_busy      <= '1';
         ctrl_en       <= '1';
         ctrl_we       <= '1';
         ctrl_tag_we   <= '1';
         ctrl_valid_we <= '1';
-        ctrl_addr     <= std_ulogic_vector(to_unsigned(curr_addr, ctrl_addr'length));
-        ctrl_wdata    <= cache_ext_mem(ii); -- From neorv32_dcache_memory_tb_pkg.vhd (run dmem_gen.py to generate)
+        ctrl_addr     <= std_ulogic_vector(curr_addr);
+        ctrl_wdata    <= cache_ext_mem(to_integer(curr_addr)); -- From neorv32_dcache_memory_tb_pkg.vhd (run dmem_gen.py to generate)
           
-        wait for t_clock_c;
         wait until rising_edge(clk_gen);
         ctrl_en       <= '0';
         ctrl_we       <= '0';
         ctrl_tag_we   <= '0';
         ctrl_valid_we <= '0';
         host_re       <= '1';
-        host_addr     <= std_ulogic_vector(to_unsigned(curr_addr, host_addr'length));
+        host_addr     <= std_ulogic_vector(curr_addr);
 
-        wait until wrt_success = '1';
-        wait until rising_edge(clk_gen);
+        wait until rising_edge(clk_gen) and wrt_success = '1';
         mem_busy      <= '0';
         host_re       <= '0';
-        curr_addr     := curr_addr + 1;
-      end loop;
+        curr_addr     <= curr_addr + 1;
 
-      if (mem_busy = '0') and (curr_addr >= cache_entries_c-1) then
+      elsif (mem_busy = '0') then
         init_mem <= '0';
       end if;
     else
