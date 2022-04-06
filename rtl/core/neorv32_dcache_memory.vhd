@@ -121,7 +121,7 @@ architecture neorv32_dcache_memory_rtl of neorv32_dcache_memory is
   -- access history --
   type history_t is record
     re_ff          : std_ulogic;
-    last_used_set  : std_ulogic_vector(DCACHE_NUM_SETS-1 downto 0);
+    last_used_set  : std_ulogic_vector(DCACHE_NUM_BLOCKS-1 downto 0);
     to_be_replaced : std_ulogic;
   end record;
   signal history : history_t;

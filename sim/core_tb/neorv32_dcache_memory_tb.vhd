@@ -147,7 +147,7 @@ begin
   run_test : process
   begin
     if init_mem = '1' then -- Fill cache from memory at beginning of testbench
-      if curr_addr < cache_entries_c then
+      if curr_addr < 4 * (cache_entries_c - 1) then
         wait until rising_edge(clk_gen);
         mem_busy      <= '1';
         ctrl_en       <= '1';
@@ -168,9 +168,9 @@ begin
         wait until rising_edge(clk_gen) and wrt_success = '1';
         mem_busy      <= '0';
         host_re       <= '0';
-        curr_addr     <= curr_addr + 1;
-
-      elsif (mem_busy = '0') then
+        curr_addr     <= curr_addr + 4;
+      else
+        wait until rising_edge(clk_gen);
         init_mem <= '0';
       end if;
     else
@@ -199,7 +199,7 @@ begin
       -- Read data that is not in cache, report error if successful
       wait for 5*t_clock_c;
       wait until rising_edge(clk_gen);
-      host_addr         <= std_ulogic_vector(to_unsigned(cache_entries_c + 1, 32));
+      host_addr         <= std_ulogic_vector(to_unsigned(4*cache_entries_c + 1, 32));
       bad_data_read_err <= or_reduce_f(hit);
       host_re           <= '0';
 
@@ -210,8 +210,8 @@ begin
       ctrl_we           <= '1';
       ctrl_tag_we       <= '1';
       ctrl_valid_we     <= '1';
-      ctrl_addr         <= std_ulogic_vector(to_unsigned(cache_entries_c + 1, 32));
-      ctrl_wdata        <= cache_ext_mem(cache_entries_c + 1); -- From neorv32_dcache_memory_tb_pkg.vhd (run dmem_gen.py to generate)
+      ctrl_addr         <= std_ulogic_vector(to_unsigned(4*cache_entries_c + 1, 32));
+      ctrl_wdata        <= cache_ext_mem(4*cache_entries_c + 1); -- From neorv32_dcache_memory_tb_pkg.vhd (run dmem_gen.py to generate)
 
       wait for 5*t_clock_c;
       wait until rising_edge(clk_gen);
