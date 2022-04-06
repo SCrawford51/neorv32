@@ -48,9 +48,10 @@ use neorv32.neorv32_package.all;
 
 entity neorv32_dcache_memory is
   generic (
-    DCACHE_NUM_BLOCKS : natural := 4;  -- number of blocks (min 1), has to be a power of 2
-    DCACHE_BLOCK_SIZE : natural := 16; -- block size in bytes (min 4), has to be a power of 2
-    DCACHE_NUM_SETS   : natural := 1   -- associativity; 1=direct-mapped, 2=2-way set-associative
+    DCACHE_NUM_BLOCKS  : natural := 4;  -- number of blocks (min 1), has to be a power of 2
+    DCACHE_BLOCK_SIZE  : natural := 16; -- block size in bytes (min 4), has to be a power of 2
+    DCACHE_NUM_SETS    : natural := 1;  -- associativity; 1=direct-mapped, 2=2-way set-associative
+    DCACHE_REPLACE_POL : natural := 1   -- cache replacement policy; 1=LRU, 2=Pseudo-LRU, 3=FIFO, 4=Random
   );
   port (
     -- global control --
@@ -122,9 +123,13 @@ architecture neorv32_dcache_memory_rtl of neorv32_dcache_memory is
   type history_t is record
     re_ff          : std_ulogic;
     last_used_set  : std_ulogic_vector(DCACHE_NUM_BLOCKS-1 downto 0);
+    first_set      : std_ulogic_vector(DCACHE_NUM_BLOCKS-1 downto 0);
     to_be_replaced : std_ulogic;
   end record;
   signal history : history_t;
+
+  -- FIFO signals
+  signal fifo_cnt : std_ulogic := '0';
   
 begin
 
@@ -137,26 +142,6 @@ begin
   ctrl_acc_addr.tag    <= ctrl_addr_i(31 downto 31-(cache_tag_size_c-1));
   ctrl_acc_addr.index  <= ctrl_addr_i(31-cache_tag_size_c downto 2+cache_offset_size_c);
   ctrl_acc_addr.offset <= ctrl_addr_i(2+(cache_offset_size_c-1) downto 2); -- discard byte offset
-
-
-	-- Cache Access History -------------------------------------------------------------------
-  -- -------------------------------------------------------------------------------------------
-  access_history: process(clk_i)
-  begin
-    if rising_edge(clk_i) then
-      history.re_ff <= host_re_i;
-      if (invalidate_i = '1') then -- invalidate whole cache
-        history.last_used_set <= (others => '1');
-      elsif (history.re_ff = '1') and (or_reduce_f(hit) = '1') and (ctrl_en_i = '0') then -- store last accessed set that caused a hit
-        history.last_used_set(to_integer(unsigned(cache_index))) <= not hit(0);
-      end if;
-      history.to_be_replaced <= history.last_used_set(to_integer(unsigned(cache_index)));
-    end if;
-  end process access_history;
-
-  -- which set is going to be replaced? -> opposite of last used set = least recently used set --
-  set_select <= '0' when (DCACHE_NUM_SETS = 1) else (not history.to_be_replaced);
-
 
 	-- Status flag memory ---------------------------------------------------------------------
   -- -------------------------------------------------------------------------------------------
@@ -249,5 +234,46 @@ begin
   cache_index  <= host_acc_addr.index  when (ctrl_en_i = '0') else ctrl_acc_addr.index;
   cache_offset <= host_acc_addr.offset when (ctrl_en_i = '0') else ctrl_acc_addr.offset;
   cache_we     <= '0'                  when (ctrl_en_i = '0') else ctrl_we_i;
+
+  -- LRU Cache Access History -------------------------------------------------------------------
+  -- -------------------------------------------------------------------------------------------
+  DCACHE_LRU_INST : if (DCACHE_REPLACE_POL = 1) generate
+    access_history: process(clk_i)
+    begin
+      if rising_edge(clk_i) then
+        history.re_ff <= host_re_i;
+        if (invalidate_i = '1') then -- invalidate whole cache
+          history.last_used_set <= (others => '1');
+        elsif (history.re_ff = '1') and (or_reduce_f(hit) = '1') and (ctrl_en_i = '0') then -- store last accessed set that caused a hit
+          history.last_used_set(to_integer(unsigned(cache_index))) <= not hit(0);
+        end if;
+        history.to_be_replaced <= history.last_used_set(to_integer(unsigned(cache_index)));
+      end if;
+    end process access_history;
+
+    -- which set is going to be replaced? -> opposite of last used set = least recently used set --
+    set_select <= '0' when (DCACHE_NUM_SETS = 1) else (not history.to_be_replaced);
+  end generate;
+
+	-- FIFO Cache Access History -------------------------------------------------------------------
+  -- -------------------------------------------------------------------------------------------
+  DCACHE_FIFO_INST : if (DCACHE_REPLACE_POL = 3) generate
+    fifo_access_history: process(clk_i)
+    begin
+      if rising_edge(clk_i) then
+        history.re_ff <= host_re_i;
+        if (invalidate_i = '1') then -- invalidate whole cache
+          history.first_set <= (others => '1');
+        elsif ((history.re_ff = '1') and (or_reduce_f(hit) = '0')) then -- update counter on a cache miss
+          fifo_cnt <= fifo_cnt + '1';
+          history.first_set(to_integer(unsigned(cache_index))) <= fifo_cnt; -- have first block to set to counter value
+        end if;
+        history.to_be_replaced <= history.first_set(to_integer(unsigned(cache_index))); -- assign first block to be replaced
+      end if;
+    end process fifo_access_history;
+
+    -- which set is going to be replaced? -> first set --
+    set_select <= '0' when (DCACHE_NUM_SETS = 1) else history.to_be_replaced;
+  end generate;
     
 end neorv32_dcache_memory_rtl;
