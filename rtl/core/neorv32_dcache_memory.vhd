@@ -271,7 +271,7 @@ begin
                                     mid_idx: natural; 
                                     level: natural) return natural is
       variable prev_acc_loc: integer := to_integer(unsigned(not history.to_be_replaced)); -- get PLRU comparison value (invert the bits of the last iteration of the replacement policy)
-      variable max_level: natural := index_to_f(DCACHE_NUM_SETS);
+      variable max_level: natural := index_to_f(DCACHE_NUM_SETS);   -- log2(#associativity)
     begin
       -- base case where the max iteration has been passed => stop algorithm
       if level > max_level then
@@ -279,14 +279,14 @@ begin
       end if;
 
       if mid_idx < prev_acc_loc then -- call algorithm on the lower half, update current bit to '0'
-        history.to_be_replaced(level - 1) <= '0';   -- i think history.to_be_replaced needs to be converted to a ulogic vector
+        history.to_be_replaced(level - 1) <= '0';   -- history.to_be_replaced needs to be changed to a ulogic vector?
 
         return plru_replacement(low_idx   => low_idx, 
                                 high_idx  => mid_idx, 
                                 mid_idx   => high_idx / 2 + low_idx,
                                 level     => level + 1);
       elsif mid_idx > prev_acc_loc then -- call algorithm on the upper half, update current bit to '1'
-        history.to_be_replaced(level - 1) <= '1';   -- i think history.to_be_replaced needs to be converted to a ulogic vector
+        history.to_be_replaced(level - 1) <= '1';   -- history.to_be_replaced needs to be changed to a ulogic vector?
 
         return plru_replacement(low_idx   => mid_idx, 
                                 high_idx  => high_idx, 
