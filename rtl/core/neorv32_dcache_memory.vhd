@@ -124,13 +124,13 @@ architecture neorv32_dcache_memory_rtl of neorv32_dcache_memory is
     re_ff          : std_ulogic;
     last_used_set  : std_ulogic_vector(DCACHE_NUM_BLOCKS-1 downto 0);
     first_set      : std_ulogic_vector(DCACHE_NUM_BLOCKS-1 downto 0);
-    to_be_replaced : std_ulogic;
+    to_be_replaced : std_ulogic;    -- update to std_ulogic_vector(index_to_f(DCACHE_NUM_SETS) downto 0)??
   end record;
   signal history : history_t;
 
   -- FIFO signals
   signal fifo_cnt : std_ulogic := '0';
-  
+
 begin
 
 	-- Access Address Decomposition -----------------------------------------------------------
@@ -254,8 +254,66 @@ begin
     -- which set is going to be replaced? -> opposite of last used set = least recently used set --
     set_select <= '0' when (DCACHE_NUM_SETS = 1) else (not history.to_be_replaced);
   end generate;
+  
+  -- PLRU Cache Access History -------------------------------------------------------------------
+  -- -------------------------------------------------------------------------------------------
+  DCACHE_PLRU_INST : if (DCACHE_REPLACE_POL = 2) generate
+    plru_access_history: process(clk_i) is
+    
+    -- Tree-PLRU algorithm to determine block to select
+    -- low_idx : index of lowest 'half' of plru bits
+    -- high_idx: index of highest 'half' of plru bits
+    -- mid_idx: index of the current root being observed
+    -- level: which level of the 'tree' the algorithm is currently on
+    -- return: natural number representing which 'way' or 'line' to select for replacement
+    impure function plru_replacement(low_idx: natural;
+                                    high_idx: natural;
+                                    mid_idx: natural; 
+                                    level: natural) return natural is
+      variable prev_acc_loc: integer := to_integer(unsigned(not history.to_be_replaced)); -- get PLRU comparison value (invert the bits of the last iteration of the replacement policy)
+      variable max_level: natural := index_to_f(DCACHE_NUM_SETS);
+    begin
+      -- base case where the max iteration has been passed => stop algorithm
+      if level > max_level then
+        return 1;
+      end if;
 
-	-- FIFO Cache Access History -------------------------------------------------------------------
+      if mid_idx < prev_acc_loc then -- call algorithm on the lower half, update current bit to '0'
+        history.to_be_replaced(level - 1) <= '0';   -- i think history.to_be_replaced needs to be converted to a ulogic vector
+
+        return plru_replacement(low_idx   => low_idx, 
+                                high_idx  => mid_idx, 
+                                mid_idx   => high_idx / 2 + low_idx,
+                                level     => level + 1);
+      elsif mid_idx > prev_acc_loc then -- call algorithm on the upper half, update current bit to '1'
+        history.to_be_replaced(level - 1) <= '1';   -- i think history.to_be_replaced needs to be converted to a ulogic vector
+
+        return plru_replacement(low_idx   => mid_idx, 
+                                high_idx  => high_idx, 
+                                mid_idx   => high_idx / 2 + low_idx,
+                                level     => level + 1);
+
+      end if;
+      return 1;   -- stop algorithm if no conditions are met
+      end function plru_replacement;
+
+    begin
+      if rising_edge(clk_i) then
+        history.re_ff <= host_re_i;
+        if (invalidate_i = '1') then -- invalidate whole cache
+          history.plru_set <= (others => '1');
+        elsif (history.re_ff = '1') and (or_reduce_f(hit) = '1') and (ctrl_en_i = '0') then -- do plru on hit
+          history.last_used_set(to_integer(unsigned(cache_index))) <= not hit(0); -- set last used set, this will need to be changed for 4-way assoc, but will work for now
+          plru_replacement(low_idx => 0, 
+                          high_idx => DCACHE_NUM_SETS - 1,
+                          mid_idx  => (DCACHE_NUM_SETS - 1) / 2,  
+                          level    => 1); 
+        end if;
+      end if;
+    end process plru_access_history;
+  end generate;
+	
+  -- FIFO Cache Access History -------------------------------------------------------------------
   -- -------------------------------------------------------------------------------------------
   DCACHE_FIFO_INST : if (DCACHE_REPLACE_POL = 3) generate
     fifo_access_history: process(clk_i)
