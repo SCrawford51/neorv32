@@ -65,7 +65,7 @@ def format_int_to_hex(num: int) -> str:
     """
 
     hex_num = hex(num)
-    hex_num = f'{hex_num[1]}"{hex_num[2:]}"'
+    hex_num = f'{hex_num[1]}"{hex_num[2:].zfill(8)}"'
     return hex_num
 
 
@@ -87,9 +87,11 @@ def create_vhd_pkg(file_name: Path, cache_size: int) -> None:
 
         # create memory
         f_out.write(f'\tconstant cache_ext_mem : ext_mem_type := (\n')
-        for i in range(2 * cache_size):
+        for i in range((2 * cache_size) - 1):
             rand_hex = format_int_to_hex(random.randrange(MAX_INT))
             f_out.write(f'\t\t{i:0>8} => {rand_hex},\n')
+        rand_hex = format_int_to_hex(random.randrange(MAX_INT))
+        f_out.write(f'\t\t{i+1:0>8} => {rand_hex}\n')
         f_out.write('\t);\n\n')
 
         # end package
