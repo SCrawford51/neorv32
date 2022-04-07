@@ -311,6 +311,9 @@ begin
         end if;
       end if;
     end process plru_access_history;
+
+    -- select the line that is going to be replaced
+    set_select <= '0' when (DCACHE_NUM_SETS = 1) else (history.to_be_replaced);
   end generate;
 	
   -- FIFO Cache Access History -------------------------------------------------------------------
