@@ -50,8 +50,8 @@ use neorv32.neorv32_dcache_memory_tb_pkg.all;
 entity tb_neorv32_dcache_memory is
   generic (
     CLOCK_FREQUENCY   : natural := 50000000; -- clock frequency of clk_i in Hz
-    DCACHE_NUM_BLOCKS : natural := 4;        -- number of blocks (min 1), has to be a power of 2
-    DCACHE_BLOCK_SIZE : natural := 16;       -- block size in bytes (min 4), has to be a power of 2
+    DCACHE_NUM_BLOCKS : natural := 8;        -- number of blocks (min 1), has to be a power of 2
+    DCACHE_BLOCK_SIZE : natural := 64;       -- block size in bytes (min 4), has to be a power of 2
     DCACHE_NUM_SETS   : natural := 1;        -- associativity; 1=direct-mapped, 2=2-way set-associative
     SELF_TERM         : boolean := true      -- When true the testbench will stop running if pass/fail has been determined
   );
@@ -74,6 +74,7 @@ architecture tb_neorv32_dcache_memory_rtl of tb_neorv32_dcache_memory is
 
   -- testbench signals
   signal curr_addr          : unsigned(31 downto 0)         := (others => '0');
+  signal curr_set           : unsigned(31 downto 0)         := (others => '0');
   signal init_mem           : std_ulogic := '1';
   signal mem_busy           : std_ulogic := '0';
   signal wrt_success        : std_ulogic := '0';
@@ -110,8 +111,8 @@ begin
   -- Testbench error/completion messages -------------------------------------------------------
   -- -------------------------------------------------------------------------------------------
   assert not (timeout_err = '1')       report "Testbench has stalled somewhere."                                 severity error;
-  assert not (invalid_err = '1')       report "Memory reported a cache hit while entire cache is invalid."       severity error;
-  assert not (invalid_block_err = '1') report "Memory reported a cache hit while the selected block is invalid." severity error;
+  assert not (invalid_err = '1')       report "Memory reported a cache hit while the selected block is invalid." severity error;
+  assert not (invalid_block_err = '1') report "Memory reported a cache miss while the selected block is valid."  severity error;
   assert not (bad_data_read_err = '1') report "Cache reported a hit for data that should not be present."        severity error;
   assert not (data_read_err = '1')     report "Cache reported a miss for data that should be present."           severity error;
   assert not (tb_finished = '1')       report "Testbench successful."                                            severity note;
@@ -151,16 +152,16 @@ begin
   run_test : process
   begin
     if init_mem = '1' then -- Fill cache from memory at beginning of testbench
-      if curr_addr < DCACHE_NUM_BLOCKS * (cache_entries_c - 1) then
+      if curr_set < DCACHE_NUM_SETS then
         wait until rising_edge(clk_gen);
-        mem_busy      <= '1';
+        host_re       <= '0';
         ctrl_en       <= '1';
         ctrl_we       <= '1';
         ctrl_tag_we   <= '1';
         ctrl_valid_we <= '1';
         ctrl_addr     <= std_ulogic_vector(curr_addr);
         ctrl_wdata    <= cache_ext_mem(to_integer(curr_addr)); -- From neorv32_dcache_memory_tb_pkg.vhd (run dmem_gen.py to generate)
-          
+
         wait until rising_edge(clk_gen);
         ctrl_en       <= '0';
         ctrl_we       <= '0';
@@ -169,10 +170,14 @@ begin
         host_re       <= '1';
         host_addr     <= std_ulogic_vector(curr_addr);
 
-        wait until rising_edge(clk_gen) and wrt_success = '1';
-        mem_busy      <= '0';
-        host_re       <= '0';
-        curr_addr     <= curr_addr + 4;
+        wait for 2*t_clock_c;
+        wait until rising_edge(clk_gen);
+          if curr_addr = 4 * (cache_entries_c - 1) then
+            --curr_addr <= (others => '0');
+            curr_set  <= curr_set + 1;
+          else
+            curr_addr <= curr_addr + 4;
+          end if;
       else
         wait until rising_edge(clk_gen);
         init_mem <= '0';
@@ -181,26 +186,35 @@ begin
       -- Tests while sets are invalid
       -- Invalidate block, attempt a read and report error if successful
       wait until rising_edge(clk_gen);
-      host_re           <= '1';
       ctrl_invalid_we   <= '1';
       ctrl_en           <= '1';
+      ctrl_addr         <= x"00000000";
+
+      wait until rising_edge(clk_gen);
+      ctrl_en           <= '0';
       host_addr         <= x"00000000";
+      host_re           <= '1';
 
       wait for 5*t_clock_c;
       wait until rising_edge(clk_gen);
-      invalid_err       <= or_reduce_f(hit);
       ctrl_invalid_we   <= '0';
+      invalid_err       <= or_reduce_f(hit);
 
       -- Revalidate block, attempt a read and report error if unsuccessful
       wait for 5*t_clock_c;
       wait until rising_edge(clk_gen);
       ctrl_valid_we     <= '1';
+      ctrl_en           <= '1';
+
+      wait until rising_edge(clk_gen);
+      ctrl_en           <= '0';
+      host_re           <= '1';
 
       wait for 5*t_clock_c;
       wait until rising_edge(clk_gen);
       ctrl_valid_we     <= '0';
       invalid_block_err <= not(and_reduce_f(hit));
-      host_addr         <= std_ulogic_vector(to_unsigned(DCACHE_NUM_BLOCKS*(cache_entries_c + 1), 32));
+      host_addr         <= std_ulogic_vector(to_unsigned(DCACHE_NUM_BLOCKS*cache_entries_c - 1, 32));
 
       -- Tests while sets are valid
       -- Read data that is not in cache, report error if successful
@@ -216,8 +230,8 @@ begin
       ctrl_we           <= '1';
       ctrl_tag_we       <= '1';
       ctrl_valid_we     <= '1';
-      ctrl_addr         <= std_ulogic_vector(to_unsigned(DCACHE_NUM_BLOCKS*(cache_entries_c + 1), 32));
-      ctrl_wdata        <= cache_ext_mem(DCACHE_NUM_BLOCKS*(cache_entries_c + 1)); -- From neorv32_dcache_memory_tb_pkg.vhd (run dmem_gen.py to generate)
+      ctrl_addr         <= std_ulogic_vector(to_unsigned(DCACHE_NUM_BLOCKS*cache_entries_c - 1, 32));
+      ctrl_wdata        <= cache_ext_mem(DCACHE_NUM_BLOCKS*cache_entries_c - 1); -- From neorv32_dcache_memory_tb_pkg.vhd (run dmem_gen.py to generate)
 
       wait for 5*t_clock_c;
       wait until rising_edge(clk_gen);
@@ -246,28 +260,28 @@ begin
   n_way_assoc_mem : for n in 0 to DCACHE_NUM_SETS-1 generate --actually (2^n)-way associative memory
     neorv32_dcache_memory_inst_x: neorv32_dcache_memory
     generic map (
-      DCACHE_NUM_BLOCKS => DCACHE_NUM_BLOCKS, -- number of blocks (min 1), has to be a power of 2
-      DCACHE_BLOCK_SIZE => DCACHE_BLOCK_SIZE, -- block size in bytes (min 4), has to be a power of 2
-      DCACHE_NUM_SETS   => n+1                -- associativity; 0=direct-mapped, 1=2-way set-associative
+      DCACHE_NUM_BLOCKS => DCACHE_NUM_BLOCKS/(n+1), -- number of blocks (min 1), has to be a power of 2
+      DCACHE_BLOCK_SIZE => DCACHE_BLOCK_SIZE/(n+1), -- block size in bytes (min 4), has to be a power of 2
+      DCACHE_NUM_SETS   => n+1                      -- associativity; 0=direct-mapped, 1=2-way set-associative
     )
     port map (
       -- global control --
-      clk_i          => clk_gen,              -- global clock, rising edge
-      invalidate_i   => rst_gen,              -- invalidate whole cache
+      clk_i          => clk_gen,                    -- global clock, rising edge
+      invalidate_i   => rst_gen,                    -- invalidate whole cache
       -- host cache access (read-only) --
-      host_addr_i    => host_addr,            -- access address
-      host_re_i      => host_re,              -- read enable
-      host_rdata_o   => host_rdata(n),        -- read data
+      host_addr_i    => host_addr,                  -- access address
+      host_re_i      => host_re,                    -- read enable
+      host_rdata_o   => host_rdata(n),              -- read data
       -- access status (1 cycle delay to access) --
-      hit_o          => hit(n),               -- hit access
+      hit_o          => hit(n),                     -- hit access
       -- ctrl cache access (write-only) --
-      ctrl_en_i      => ctrl_en,              -- control interface enable
-      ctrl_addr_i    => ctrl_addr,            -- access address
-      ctrl_we_i      => ctrl_we,              -- write enable (full-word)
-      ctrl_wdata_i   => ctrl_wdata,           -- write data
-      ctrl_tag_we_i  => ctrl_tag_we,          -- write tag to selected block
-      ctrl_valid_i   => ctrl_valid_we,        -- make selected block valid
-      ctrl_invalid_i => ctrl_invalid_we       -- make selected block invalid
+      ctrl_en_i      => ctrl_en,                    -- control interface enable
+      ctrl_addr_i    => ctrl_addr,                  -- access address
+      ctrl_we_i      => ctrl_we,                    -- write enable (full-word)
+      ctrl_wdata_i   => ctrl_wdata,                 -- write data
+      ctrl_tag_we_i  => ctrl_tag_we,                -- write tag to selected block
+      ctrl_valid_i   => ctrl_valid_we,              -- make selected block valid
+      ctrl_invalid_i => ctrl_invalid_we             -- make selected block invalid
     );
   end generate;
 

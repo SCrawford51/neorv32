@@ -124,7 +124,12 @@ architecture neorv32_dcache_memory_rtl of neorv32_dcache_memory is
     last_used_set  : std_ulogic_vector(DCACHE_NUM_BLOCKS-1 downto 0);
     to_be_replaced : std_ulogic;
   end record;
-  signal history : history_t;
+
+  signal history : history_t := (
+    re_ff => '0', 
+    last_used_set => (others => '0'), 
+    to_be_replaced => '0'
+  );
   
 begin
 
