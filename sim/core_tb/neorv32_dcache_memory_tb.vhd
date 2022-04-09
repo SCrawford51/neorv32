@@ -98,6 +98,7 @@ architecture tb_neorv32_dcache_memory_rtl of tb_neorv32_dcache_memory is
   signal invalid_block_err  : std_ulogic := '0';
   signal bad_data_read_err  : std_ulogic := '0';
   signal data_read_err      : std_ulogic := '0';
+  signal tb_error           : std_ulogic := '0';
   signal tb_finished        : std_ulogic := '0';
   
 begin
@@ -123,9 +124,12 @@ begin
     begin
       if rising_edge(clk_gen) then
         sim_time := sim_time + 1;
+        tb_error <= timeout_err or invalid_err or invalid_block_err or bad_data_read_err or data_read_err;
         if sim_time > MAX_CYCLES then
           run_tb      <= '0';
           timeout_err <= '1';
+        elsif tb_error = '1' then
+          run_tb <= '0';
         elsif tb_finished = '1' then
           run_tb <= '0';
         end if;
@@ -147,7 +151,7 @@ begin
   run_test : process
   begin
     if init_mem = '1' then -- Fill cache from memory at beginning of testbench
-      if curr_addr < 4 * (cache_entries_c - 1) then
+      if curr_addr < DCACHE_NUM_BLOCKS * (cache_entries_c - 1) then
         wait until rising_edge(clk_gen);
         mem_busy      <= '1';
         ctrl_en       <= '1';
@@ -179,11 +183,13 @@ begin
       wait until rising_edge(clk_gen);
       host_re           <= '1';
       ctrl_invalid_we   <= '1';
+      ctrl_en           <= '1';
       host_addr         <= x"00000000";
 
       wait for 5*t_clock_c;
       wait until rising_edge(clk_gen);
       invalid_err       <= or_reduce_f(hit);
+      ctrl_invalid_we   <= '0';
 
       -- Revalidate block, attempt a read and report error if unsuccessful
       wait for 5*t_clock_c;
@@ -194,12 +200,12 @@ begin
       wait until rising_edge(clk_gen);
       ctrl_valid_we     <= '0';
       invalid_block_err <= not(and_reduce_f(hit));
+      host_addr         <= std_ulogic_vector(to_unsigned(DCACHE_NUM_BLOCKS*(cache_entries_c + 1), 32));
 
       -- Tests while sets are valid
       -- Read data that is not in cache, report error if successful
       wait for 5*t_clock_c;
       wait until rising_edge(clk_gen);
-      host_addr         <= std_ulogic_vector(to_unsigned(4*cache_entries_c + 1, 32));
       bad_data_read_err <= or_reduce_f(hit);
       host_re           <= '0';
 
@@ -210,8 +216,8 @@ begin
       ctrl_we           <= '1';
       ctrl_tag_we       <= '1';
       ctrl_valid_we     <= '1';
-      ctrl_addr         <= std_ulogic_vector(to_unsigned(4*cache_entries_c + 1, 32));
-      ctrl_wdata        <= cache_ext_mem(4*cache_entries_c + 1); -- From neorv32_dcache_memory_tb_pkg.vhd (run dmem_gen.py to generate)
+      ctrl_addr         <= std_ulogic_vector(to_unsigned(DCACHE_NUM_BLOCKS*(cache_entries_c + 1), 32));
+      ctrl_wdata        <= cache_ext_mem(DCACHE_NUM_BLOCKS*(cache_entries_c + 1)); -- From neorv32_dcache_memory_tb_pkg.vhd (run dmem_gen.py to generate)
 
       wait for 5*t_clock_c;
       wait until rising_edge(clk_gen);
