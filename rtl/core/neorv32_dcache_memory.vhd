@@ -81,6 +81,7 @@ architecture neorv32_dcache_memory_rtl of neorv32_dcache_memory is
   constant cache_index_size_c  : natural := index_size_f(DCACHE_NUM_BLOCKS);
   constant cache_tag_size_c    : natural := 32 - (cache_offset_size_c + cache_index_size_c + 2); -- 2 additional bits for byte offset
   constant cache_entries_c     : natural := DCACHE_NUM_BLOCKS * (DCACHE_BLOCK_SIZE/4); -- number of 32-bit entries (per set)
+  constant rand_size           : natural := index_size_f(DCACHE_NUM_BLOCKS);
   
   -- status flag memory --
   signal valid_flag_s0 : std_ulogic_vector(DCACHE_NUM_BLOCKS-1 downto 0);
@@ -124,12 +125,20 @@ architecture neorv32_dcache_memory_rtl of neorv32_dcache_memory is
     re_ff          : std_ulogic;
     last_used_set  : std_ulogic_vector(DCACHE_NUM_BLOCKS-1 downto 0);
     first_set      : std_ulogic_vector(DCACHE_NUM_BLOCKS-1 downto 0);
-    to_be_replaced : std_ulogic;
+    to_be_replaced : std_ulogic_vector(rand_size-1 downto 0);
   end record;
   signal history : history_t;
 
   -- FIFO signals
   signal fifo_cnt : std_ulogic := '0';
+
+  -- Random signals
+  signal rand_dout  : std_ulogic_vector(rand_size-1 downto 0);
+  signal reseed     : std_logic;
+  signal newseed    : std_logic_vector(31 downto 0) := x"AAAACCCC";
+  signal rand_ready : std_logic;
+  signal rand_valid : std_logic;
+  signal rand_data  : std_logic_vector(31 downto 0); 
   
 begin
 
@@ -238,7 +247,7 @@ begin
   -- LRU Cache Access History -------------------------------------------------------------------
   -- -------------------------------------------------------------------------------------------
   DCACHE_LRU_INST : if (DCACHE_REPLACE_POL = 1) generate
-    access_history: process(clk_i)
+    access_history : process(clk_i)
     begin
       if rising_edge(clk_i) then
         history.re_ff <= host_re_i;
@@ -258,7 +267,7 @@ begin
 	-- FIFO Cache Access History -------------------------------------------------------------------
   -- -------------------------------------------------------------------------------------------
   DCACHE_FIFO_INST : if (DCACHE_REPLACE_POL = 3) generate
-    fifo_access_history: process(clk_i)
+    fifo_access_history : process(clk_i)
     begin
       if rising_edge(clk_i) then
         history.re_ff <= host_re_i;
@@ -274,6 +283,41 @@ begin
 
     -- which set is going to be replaced? -> first set --
     set_select <= '0' when (DCACHE_NUM_SETS = 1) else history.to_be_replaced;
+  end generate;
+
+  -- Random Cache Access History -------------------------------------------------------------------
+  -- -------------------------------------------------------------------------------------------
+  DCACHE_RANDOM_INST : if (DCACHE_REPLACE_POL = 4) generate
+    random_sel_inst : random_selector -- 32-bit random number generator
+    generic map (
+        init_seed       => x"ACACACAC",
+        force_const_mul => false,
+    );
+    port map (
+        clk       => clk_i,
+        reseed    => '0',
+        newseed   => x"AAAACCCC",
+        out_ready => rand_ready,
+        out_valid => rand_valid,
+        out_data  => rand_data
+    );
+
+    rand_access_history : process(clk_i)
+    begin
+      if rising_edge(clk_i) then
+        history.re_ff <= host_re_i;
+        rand_ready <= '1';
+        if (invalidate_i = '1') then -- invalidate whole cache
+          history.first_set <= (others => '1');
+        elsif (rand_valid = '1') then
+          rand_dout <= rand_data(rand_size-1 downto 0);
+        end if;
+        history.to_be_replaced <= rand_dout;
+      end if;
+    end process rand_access_history;
+  
+    -- which set is going to be replaced? -> random set --
+    set_select <= x"0" when (DCACHE_NUM_SETS = 1) else history.to_be_replaced;
   end generate;
     
 end neorv32_dcache_memory_rtl;
