@@ -42,6 +42,7 @@
 library ieee;
 use ieee.std_logic_1164.all;
 use ieee.numeric_std.all;
+use ieee.std_logic_unsigned.all;
 
 library neorv32;
 use neorv32.neorv32_package.all;
@@ -81,8 +82,8 @@ architecture neorv32_dcache_memory_rtl of neorv32_dcache_memory is
   constant cache_index_size_c  : natural := index_size_f(DCACHE_NUM_BLOCKS);
   constant cache_tag_size_c    : natural := 32 - (cache_offset_size_c + cache_index_size_c + 2); -- 2 additional bits for byte offset
   constant cache_entries_c     : natural := DCACHE_NUM_BLOCKS * (DCACHE_BLOCK_SIZE/4); -- number of 32-bit entries (per set)
-  constant rand_size           : natural := index_size_f(DCACHE_NUM_BLOCKS);
-  
+  constant block_precsion      : natural := index_size_f(DCACHE_NUM_SETS); 
+
   -- status flag memory --
   signal valid_flag_s0 : std_ulogic_vector(DCACHE_NUM_BLOCKS-1 downto 0);
   signal valid_flag_s1 : std_ulogic_vector(DCACHE_NUM_BLOCKS-1 downto 0);
@@ -118,22 +119,22 @@ architecture neorv32_dcache_memory_rtl of neorv32_dcache_memory is
   signal cache_offset : std_ulogic_vector(cache_offset_size_c-1 downto 0);
   signal cache_addr   : std_ulogic_vector((cache_index_size_c+cache_offset_size_c)-1 downto 0); -- index & offset
   signal cache_we     : std_ulogic; -- write enable (full-word)
-  signal set_select   : std_ulogic;
+  signal set_select   : std_ulogic_vector(block_precsion-1 downto 0);
   
   -- access history --
   type history_t is record
     re_ff          : std_ulogic;
-    last_used_set  : std_ulogic_vector(DCACHE_NUM_BLOCKS-1 downto 0);
-    first_set      : std_ulogic_vector(DCACHE_NUM_BLOCKS-1 downto 0);
-    to_be_replaced : std_ulogic_vector(rand_size-1 downto 0);
+    last_used_set  : std_ulogic_vector(DCACHE_NUM_SETS-1 downto 0);
+    first_set      : std_ulogic_vector(DCACHE_NUM_SETS-1 downto 0);
+    to_be_replaced : std_ulogic_vector(DCACHE_NUM_SETS-1 downto 0);
   end record;
   signal history : history_t;
 
   -- FIFO signals
-  signal fifo_cnt : std_ulogic := '0';
+  signal fifo_cnt : std_logic_vector(block_precsion-1 downto 0);
 
   -- Random signals
-  signal rand_dout  : std_ulogic_vector(rand_size-1 downto 0);
+  signal rand_dout  : std_logic_vector(block_precsion-1 downto 0);
   signal reseed     : std_logic;
   signal newseed    : std_logic_vector(31 downto 0) := x"AAAACCCC";
   signal rand_ready : std_logic;
@@ -163,13 +164,13 @@ begin
         valid_flag_s1 <= (others => '0');
       elsif (ctrl_en_i = '1') then
         if (ctrl_invalid_i = '1') then -- make current block invalid
-          if (set_select = '0') then
+          if (set_select = x"0") then
             valid_flag_s0(to_integer(unsigned(cache_index))) <= '0';
           else
             valid_flag_s1(to_integer(unsigned(cache_index))) <= '0';
           end if;
         elsif (ctrl_valid_i = '1') then -- make current block valid
-          if (set_select = '0') then
+          if (set_select = x"0") then
             valid_flag_s0(to_integer(unsigned(cache_index))) <= '1';
           else
             valid_flag_s1(to_integer(unsigned(cache_index))) <= '1';
@@ -189,7 +190,7 @@ begin
   begin
     if rising_edge(clk_i) then
       if (ctrl_en_i = '1') and (ctrl_tag_we_i = '1') then -- write access
-        if (set_select = '0') then
+        if (set_select = x"0") then
           tag_mem_s0(to_integer(unsigned(cache_index))) <= ctrl_acc_addr.tag;
         else
           tag_mem_s1(to_integer(unsigned(cache_index))) <= ctrl_acc_addr.tag;
@@ -221,7 +222,7 @@ begin
   begin
     if rising_edge(clk_i) then
       if (cache_we = '1') then -- write access from control (full-word)
-        if (set_select = '0') or (DCACHE_NUM_SETS = 1) then
+        if (set_select = x"0") or (DCACHE_NUM_SETS = 1) then
           cache_data_memory_s0(to_integer(unsigned(cache_addr))) <= ctrl_wdata_i;
         else
           cache_data_memory_s1(to_integer(unsigned(cache_addr))) <= ctrl_wdata_i;
@@ -261,7 +262,7 @@ begin
     end process access_history;
 
     -- which set is going to be replaced? -> opposite of last used set = least recently used set --
-    set_select <= '0' when (DCACHE_NUM_SETS = 1) else (not history.to_be_replaced);
+    set_select <= x"0" when (DCACHE_NUM_SETS = 1) else (not history.to_be_replaced);
   end generate;
 
 	-- FIFO Cache Access History -------------------------------------------------------------------
@@ -274,15 +275,15 @@ begin
         if (invalidate_i = '1') then -- invalidate whole cache
           history.first_set <= (others => '1');
         elsif ((history.re_ff = '1') and (or_reduce_f(hit) = '0')) then -- update counter on a cache miss
-          fifo_cnt <= fifo_cnt + '1';
-          history.first_set(to_integer(unsigned(cache_index))) <= fifo_cnt; -- have first block to set to counter value
+          fifo_cnt <= fifo_cnt + 1;
+          history.first_set <= std_ulogic_vector(fifo_cnt); -- have first block to set to counter value
         end if;
-        history.to_be_replaced <= history.first_set(to_integer(unsigned(cache_index))); -- assign first block to be replaced
+        history.to_be_replaced <= history.first_set; -- assign first block to be replaced
       end if;
     end process fifo_access_history;
 
     -- which set is going to be replaced? -> first set --
-    set_select <= '0' when (DCACHE_NUM_SETS = 1) else history.to_be_replaced;
+    set_select <= x"0" when (DCACHE_NUM_SETS = 1) else history.to_be_replaced;
   end generate;
 
   -- Random Cache Access History -------------------------------------------------------------------
@@ -291,15 +292,15 @@ begin
     random_sel_inst : random_selector -- 32-bit random number generator
     generic map (
         init_seed       => x"ACACACAC",
-        force_const_mul => false,
-    );
+        force_const_mul => false
+    )
     port map (
-        clk       => clk_i,
+        clk_i     => clk_i,
         reseed    => '0',
         newseed   => x"AAAACCCC",
-        out_ready => rand_ready,
-        out_valid => rand_valid,
-        out_data  => rand_data
+        rand_ready => rand_ready,
+        rand_valid => rand_valid,
+        rand_data  => rand_data
     );
 
     rand_access_history : process(clk_i)
@@ -310,12 +311,12 @@ begin
         if (invalidate_i = '1') then -- invalidate whole cache
           history.first_set <= (others => '1');
         elsif (rand_valid = '1') then
-          rand_dout <= rand_data(rand_size-1 downto 0);
+          rand_dout <= rand_data(block_precsion-1 downto 0);
         end if;
-        history.to_be_replaced <= rand_dout;
+        history.to_be_replaced <= std_ulogic_vector(rand_dout);
       end if;
     end process rand_access_history;
-  
+    
     -- which set is going to be replaced? -> random set --
     set_select <= x"0" when (DCACHE_NUM_SETS = 1) else history.to_be_replaced;
   end generate;
