@@ -97,7 +97,7 @@ architecture neorv32_dcache_memory_rtl of neorv32_dcache_memory is
   signal tag : tag_rd_t; -- tag read data
   
   -- access status --
-  signal hit : std_ulogic_vector(1 downto 0);
+  signal hit : std_ulogic_vector(block_precsion-1 downto 0);
   
   -- access address decomposition --
   type acc_addr_t is record
@@ -122,6 +122,7 @@ architecture neorv32_dcache_memory_rtl of neorv32_dcache_memory is
   signal set_select   : std_ulogic_vector(block_precsion-1 downto 0);
   
   -- access history --
+  type lru_set is array (0 to DCACHE_NUM_SETS-1) of std_logic_vector(7 downto 0);
   type history_t is record
     re_ff          : std_ulogic;
     last_used_set  : std_ulogic_vector(DCACHE_NUM_SETS-1 downto 0);
@@ -140,6 +141,23 @@ architecture neorv32_dcache_memory_rtl of neorv32_dcache_memory is
   signal rand_ready : std_logic;
   signal rand_valid : std_logic;
   signal rand_data  : std_logic_vector(31 downto 0); 
+
+  -- LRU signals
+  signal age : lru_set;
+  signal hit_cnt : std_logic_vector(block_precsion-1 downto 0) := x"0";
+
+  function maxindex(a : lru_set) return integer is
+    variable index : integer := 0;
+    variable foundmax : std_logic_vector(block_precsion-1 downto 0) := (others => '0');
+  begin
+    for i in 0 to a'high loop
+      if a(i) > foundmax then
+        index := i;
+        foundmax := a(i);
+      end if;
+    end loop;
+    return index;
+  end function;
   
 begin
 
@@ -206,8 +224,11 @@ begin
   begin
     hit <= (others => '0');
     for i in 0 to DCACHE_NUM_SETS-1 loop
-      if (host_acc_addr.tag = tag(i)) and (valid(i) = '1') then
+      if (host_acc_addr.tag = tag(i)) and (valid(i) = '1') then -- Hit
         hit(i) <= '1';
+        age(to_integer(to_unsigned(i, age(0)'length))) <= (others => '0');
+      else -- Miss
+        age(to_integer(to_unsigned(i, age(0)'length))) <= age(to_integer(to_unsigned(i, age(0)'length))) + 1;
       end if;
     end loop; -- i
   end process comparator;
@@ -246,7 +267,7 @@ begin
   cache_we     <= '0'                  when (ctrl_en_i = '0') else ctrl_we_i;
 
   -- LRU Cache Access History -------------------------------------------------------------------
-  -- -------------------------------------------------------------------------------------------
+  -- --------------------------------------------------------------------------------------------
   DCACHE_LRU_INST : if (DCACHE_REPLACE_POL = 1) generate
     access_history : process(clk_i)
     begin
@@ -255,9 +276,9 @@ begin
         if (invalidate_i = '1') then -- invalidate whole cache
           history.last_used_set <= (others => '1');
         elsif (history.re_ff = '1') and (or_reduce_f(hit) = '1') and (ctrl_en_i = '0') then -- store last accessed set that caused a hit
-          history.last_used_set(to_integer(unsigned(cache_index))) <= not hit(0);
+          history.last_used_set <= std_ulogic_vector(to_unsigned(maxindex(age), history.last_used_set'length));
         end if;
-        history.to_be_replaced <= history.last_used_set(to_integer(unsigned(cache_index)));
+        history.to_be_replaced <= history.last_used_set;
       end if;
     end process access_history;
 
