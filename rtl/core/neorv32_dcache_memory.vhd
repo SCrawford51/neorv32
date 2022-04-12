@@ -85,15 +85,19 @@ architecture neorv32_dcache_memory_rtl of neorv32_dcache_memory is
   constant block_precsion      : natural := index_size_f(DCACHE_NUM_SETS); 
 
   -- status flag memory --
-  signal valid_flag_s0 : std_ulogic_vector(DCACHE_NUM_BLOCKS-1 downto 0);
-  signal valid_flag_s1 : std_ulogic_vector(DCACHE_NUM_BLOCKS-1 downto 0);
-  signal valid         : std_ulogic_vector(1 downto 0); -- valid flag read data
+  --signal valid_flag_s0 : std_ulogic_vector(DCACHE_NUM_BLOCKS-1 downto 0);
+  --signal valid_flag_s1 : std_ulogic_vector(DCACHE_NUM_BLOCKS-1 downto 0);
+  type valid_flag_a is array (0 to DCACHE_NUM_SETS-1) of std_ulogic_vector(DCACHE_NUM_BLOCKS-1 downto 0);
+  signal valid_flags : valid_flag_a;
+  signal valid       : std_ulogic_vector(3 downto 0); -- valid flag read data
   
   -- tag memory --
   type tag_mem_t is array (0 to DCACHE_NUM_BLOCKS-1) of std_ulogic_vector(cache_tag_size_c-1 downto 0);
   signal tag_mem_s0 : tag_mem_t;
   signal tag_mem_s1 : tag_mem_t;
-  type tag_rd_t is array (0 to 1) of std_ulogic_vector(cache_tag_size_c-1 downto 0);
+  signal tag_mem_s2 : tag_mem_t;
+  signal tag_mem_s3 : tag_mem_t;
+  type tag_rd_t is array (0 to 3) of std_ulogic_vector(cache_tag_size_c-1 downto 0);
   signal tag : tag_rd_t; -- tag read data
   
   -- access status --
@@ -111,9 +115,11 @@ architecture neorv32_dcache_memory_rtl of neorv32_dcache_memory is
   type cache_mem_t is array (0 to cache_entries_c-1) of std_ulogic_vector(31 downto 0);
   signal cache_data_memory_s0 : cache_mem_t; -- set 0
   signal cache_data_memory_s1 : cache_mem_t; -- set 1
+  signal cache_data_memory_s2 : cache_mem_t; -- set 0
+  signal cache_data_memory_s3 : cache_mem_t; -- set 1
   
   -- cache data memory access --
-  type cache_rdata_t is array (0 to 1) of std_ulogic_vector(31 downto 0);
+  type cache_rdata_t is array (0 to DCACHE_NUM_SETS-1) of std_ulogic_vector(31 downto 0);
   signal cache_rdata  : cache_rdata_t;
   signal cache_index  : std_ulogic_vector(cache_index_size_c-1 downto 0);
   signal cache_offset : std_ulogic_vector(cache_offset_size_c-1 downto 0);
@@ -178,26 +184,38 @@ begin
     if rising_edge(clk_i) then
       -- write access --
       if (invalidate_i = '1') then -- invalidate whole cache
-        valid_flag_s0 <= (others => '0');
-        valid_flag_s1 <= (others => '0');
+        valid_flags(0) <= (others => '0');
+        valid_flags(1) <= (others => '0');
+        valid_flags(2) <= (others => '0');
+        valid_flags(3) <= (others => '0');
       elsif (ctrl_en_i = '1') then
         if (ctrl_invalid_i = '1') then -- make current block invalid
           if (set_select = x"0") then
-            valid_flag_s0(to_integer(unsigned(cache_index))) <= '0';
-          else
-            valid_flag_s1(to_integer(unsigned(cache_index))) <= '0';
+            valid_flags(0)(to_integer(unsigned(cache_index))) <= '0';
+          elsif (set_select = x"1") then
+            valid_flags(1)(to_integer(unsigned(cache_index))) <= '0';
+          elsif (set_select = x"2") then
+            valid_flags(2)(to_integer(unsigned(cache_index))) <= '0';
+          elsif (set_select = x"3") then
+            valid_flags(3)(to_integer(unsigned(cache_index))) <= '0';
           end if;
         elsif (ctrl_valid_i = '1') then -- make current block valid
           if (set_select = x"0") then
-            valid_flag_s0(to_integer(unsigned(cache_index))) <= '1';
-          else
-            valid_flag_s1(to_integer(unsigned(cache_index))) <= '1';
+            valid_flags(0)(to_integer(unsigned(cache_index))) <= '1';
+          elsif (set_select = x"1") then
+            valid_flags(1)(to_integer(unsigned(cache_index))) <= '1';
+          elsif (set_select = x"2") then
+            valid_flags(2)(to_integer(unsigned(cache_index))) <= '1';
+          elsif (set_select = x"3") then
+            valid_flags(3)(to_integer(unsigned(cache_index))) <= '1';
           end if;
         end if;
       end if;
       -- read access (sync) --
-      valid(0) <= valid_flag_s0(to_integer(unsigned(cache_index)));
-      valid(1) <= valid_flag_s1(to_integer(unsigned(cache_index)));
+      valid(0) <= valid_flags(0)(to_integer(unsigned(cache_index)));
+      valid(1) <= valid_flags(1)(to_integer(unsigned(cache_index)));
+      valid(2) <= valid_flags(2)(to_integer(unsigned(cache_index)));
+      valid(3) <= valid_flags(3)(to_integer(unsigned(cache_index)));
     end if;
   end process status_memory;
 
@@ -210,12 +228,18 @@ begin
       if (ctrl_en_i = '1') and (ctrl_tag_we_i = '1') then -- write access
         if (set_select = x"0") then
           tag_mem_s0(to_integer(unsigned(cache_index))) <= ctrl_acc_addr.tag;
-        else
+        elsif (set_select = x"1") then
           tag_mem_s1(to_integer(unsigned(cache_index))) <= ctrl_acc_addr.tag;
+        elsif (set_select = x"2") then
+          tag_mem_s2(to_integer(unsigned(cache_index))) <= ctrl_acc_addr.tag;
+        elsif (set_select = x"3") then
+          tag_mem_s3(to_integer(unsigned(cache_index))) <= ctrl_acc_addr.tag;
         end if;
       end if;
       tag(0) <= tag_mem_s0(to_integer(unsigned(cache_index)));
       tag(1) <= tag_mem_s1(to_integer(unsigned(cache_index)));
+      tag(2) <= tag_mem_s0(to_integer(unsigned(cache_index)));
+      tag(3) <= tag_mem_s1(to_integer(unsigned(cache_index)));
     end if;
   end process tag_memory;
 
@@ -245,18 +269,25 @@ begin
       if (cache_we = '1') then -- write access from control (full-word)
         if (set_select = x"0") or (DCACHE_NUM_SETS = 1) then
           cache_data_memory_s0(to_integer(unsigned(cache_addr))) <= ctrl_wdata_i;
-        else
+        elsif (set_select = x"1") then
           cache_data_memory_s1(to_integer(unsigned(cache_addr))) <= ctrl_wdata_i;
+        elsif (set_select = x"2") then
+          cache_data_memory_s2(to_integer(unsigned(cache_addr))) <= ctrl_wdata_i;
+        elsif (set_select = x"3") then
+          cache_data_memory_s3(to_integer(unsigned(cache_addr))) <= ctrl_wdata_i;
         end if;
       end if;
       -- read access from host (full-word) --
       cache_rdata(0) <= cache_data_memory_s0(to_integer(unsigned(cache_addr)));
       cache_rdata(1) <= cache_data_memory_s1(to_integer(unsigned(cache_addr)));
+      cache_rdata(2) <= cache_data_memory_s2(to_integer(unsigned(cache_addr)));
+      cache_rdata(3) <= cache_data_memory_s3(to_integer(unsigned(cache_addr)));
     end if;
   end process cache_mem_access;
 
   -- data output --
-  host_rdata_o <= cache_rdata(0) when (hit(0) = '1') or (DCACHE_NUM_SETS = 1) else cache_rdata(1);
+  host_rdata_o <= cache_rdata(0) when (hit(0) = '1') or (DCACHE_NUM_SETS = 1) else cache_rdata(1) when (hit(1) = '1')
+  else cache_rdata(2) when (hit(2) = '1') else cache_rdata(3) when (hit(3) = '1');
 
   -- cache block ram access address --
   cache_addr <= cache_index & cache_offset;
