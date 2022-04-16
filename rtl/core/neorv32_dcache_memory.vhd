@@ -122,13 +122,14 @@ architecture neorv32_dcache_memory_rtl of neorv32_dcache_memory is
   signal set_select   : std_ulogic_vector(block_precsion-1 downto 0) := (others => '0');
   
   -- access history --
-  type lru_set is array (0 to DCACHE_NUM_SETS-1) of std_logic_vector(7 downto 0);
+  type lru_set is array (0 to DCACHE_NUM_SETS-1) of unsigned(7 downto 0);
   type history_t is record
     re_ff          : std_ulogic;
     last_used_set  : std_ulogic_vector(DCACHE_NUM_SETS-1 downto 0);
     first_set      : std_ulogic_vector(DCACHE_NUM_SETS-1 downto 0);
     to_be_replaced : std_ulogic_vector(DCACHE_NUM_SETS-1 downto 0);
   end record;
+
   signal history : history_t := (
     re_ff          => '0', 
     last_used_set  => (others => '0'), 
@@ -137,7 +138,7 @@ architecture neorv32_dcache_memory_rtl of neorv32_dcache_memory is
   );
 
   -- FIFO signals
-  signal fifo_cnt : std_logic_vector(block_precsion-1 downto 0);
+  signal fifo_cnt : unsigned(block_precsion-1 downto 0);
 
   -- Random signals
   signal rand_dout  : std_logic_vector(block_precsion-1 downto 0);
@@ -153,7 +154,7 @@ architecture neorv32_dcache_memory_rtl of neorv32_dcache_memory is
 
   function maxindex(a : lru_set) return integer is
     variable index : integer := 0;
-    variable foundmax : std_logic_vector(block_precsion-1 downto 0) := (others => '0');
+    variable foundmax : unsigned(block_precsion-1 downto 0) := (others => '0');
   begin
     for i in 0 to a'high loop
       if a(i) > foundmax then
@@ -249,9 +250,9 @@ begin
     for i in 0 to DCACHE_NUM_SETS-1 loop
       if (host_acc_addr.tag = tag(i)) and (valid(i) = '1') then -- Hit
         hit(i) <= '1';
-        age(to_integer(to_unsigned(i, age(0)'length))) <= (others => '0');
+        age(i) <= (others => '0');
       else -- Miss
-        age(to_integer(to_unsigned(i, age(0)'length))) <= age(to_integer(to_unsigned(i, age(0)'length))) + 1;
+        age(i) <= age(i) + 1;
       end if;
     end loop; -- i
   end process comparator;
@@ -313,7 +314,7 @@ begin
     end process access_history;
 
     -- which set is going to be replaced? -> opposite of last used set = least recently used set --
-    set_select <= x"0" when (DCACHE_NUM_SETS = 1) else (not history.to_be_replaced);
+    set_select <= x"0" when (DCACHE_NUM_SETS = 1) else history.to_be_replaced;
   end generate;
 
 	-- FIFO Cache Access History -------------------------------------------------------------------
