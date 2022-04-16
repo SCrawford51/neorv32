@@ -83,19 +83,19 @@ architecture neorv32_dcache_memory_rtl of neorv32_dcache_memory is
   constant cache_entries_c     : natural := DCACHE_NUM_BLOCKS * (DCACHE_BLOCK_SIZE/4); -- number of 32-bit entries (per set)
   
   -- status flag memory --
-  signal valid_flag_s0 : std_ulogic_vector(DCACHE_NUM_BLOCKS-1 downto 0);
-  signal valid_flag_s1 : std_ulogic_vector(DCACHE_NUM_BLOCKS-1 downto 0);
-  signal valid         : std_ulogic_vector(1 downto 0); -- valid flag read data
+  signal valid_flag_s0 : std_ulogic_vector(DCACHE_NUM_BLOCKS-1 downto 0) := (others => '0');
+  signal valid_flag_s1 : std_ulogic_vector(DCACHE_NUM_BLOCKS-1 downto 0) := (others => '0');
+  signal valid         : std_ulogic_vector(1 downto 0) := (others => '0'); -- valid flag read data
   
   -- tag memory --
   type tag_mem_t is array (0 to DCACHE_NUM_BLOCKS-1) of std_ulogic_vector(cache_tag_size_c-1 downto 0);
-  signal tag_mem_s0 : tag_mem_t;
-  signal tag_mem_s1 : tag_mem_t;
+  signal tag_mem_s0 : tag_mem_t := (others => (others => '0'));
+  signal tag_mem_s1 : tag_mem_t := (others => (others => '0'));
   type tag_rd_t is array (0 to 1) of std_ulogic_vector(cache_tag_size_c-1 downto 0);
-  signal tag : tag_rd_t; -- tag read data
+  signal tag : tag_rd_t := (others => (others => '0')); -- tag read data
   
   -- access status --
-  signal hit : std_ulogic_vector(1 downto 0);
+  signal hit : std_ulogic_vector(1 downto 0) := (others => '0');
   
   -- access address decomposition --
   type acc_addr_t is record
@@ -107,17 +107,17 @@ architecture neorv32_dcache_memory_rtl of neorv32_dcache_memory is
   
   -- cache data memory --
   type cache_mem_t is array (0 to cache_entries_c-1) of std_ulogic_vector(31 downto 0);
-  signal cache_data_memory_s0 : cache_mem_t; -- set 0
-  signal cache_data_memory_s1 : cache_mem_t; -- set 1
+  signal cache_data_memory_s0 : cache_mem_t := (others => (others => '0')); -- set 0
+  signal cache_data_memory_s1 : cache_mem_t := (others => (others => '0')); -- set 1
   
   -- cache data memory access --
   type cache_rdata_t is array (0 to 1) of std_ulogic_vector(31 downto 0);
-  signal cache_rdata  : cache_rdata_t;
-  signal cache_index  : std_ulogic_vector(cache_index_size_c-1 downto 0);
-  signal cache_offset : std_ulogic_vector(cache_offset_size_c-1 downto 0);
-  signal cache_addr   : std_ulogic_vector((cache_index_size_c+cache_offset_size_c)-1 downto 0); -- index & offset
-  signal cache_we     : std_ulogic; -- write enable (full-word)
-  signal set_select   : std_ulogic;
+  signal cache_rdata  : cache_rdata_t := (others => (others => '0'));
+  signal cache_index  : std_ulogic_vector(cache_index_size_c-1 downto 0) := (others => '0');
+  signal cache_offset : std_ulogic_vector(cache_offset_size_c-1 downto 0) := (others => '0');
+  signal cache_addr   : std_ulogic_vector((cache_index_size_c+cache_offset_size_c)-1 downto 0) := (others => '0'); -- index & offset
+  signal cache_we     : std_ulogic := '0' ; -- write enable (full-word)
+  signal set_select   : std_ulogic := '0';
   
   -- access history --
   type history_t is record
@@ -126,10 +126,16 @@ architecture neorv32_dcache_memory_rtl of neorv32_dcache_memory is
     first_set      : std_ulogic_vector(DCACHE_NUM_BLOCKS-1 downto 0);
     to_be_replaced : std_ulogic;
   end record;
-  signal history : history_t;
+
+  signal history : history_t := (
+    re_ff => '0', 
+    last_used_set => (others => '0'), 
+    to_be_replaced => '0'
+  );
 
   -- FIFO signals
   signal fifo_cnt : std_ulogic := '0';
+
   
 begin
 
