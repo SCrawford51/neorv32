@@ -355,7 +355,7 @@ begin
 
       if mid_idx < prev_acc_loc then -- call algorithm on the lower half, update current bit to '0'
         history.plru_set(mid_idx) <= '0'; 
-        plru_path(level - 1)      <= '1';
+        plru_path(level - 1)      <= '1';   -- used for next replacement
 
         return plru_replacement(low_idx   => low_idx, 
                                 high_idx  => mid_idx, 
@@ -363,7 +363,7 @@ begin
                                 level     => level + 1);
       elsif mid_idx > prev_acc_loc then -- call algorithm on the upper half, update current bit to '1'
         history.plru_set(mid_idx) <= '1';
-        plru_path(level - 1)      <= '0';
+        plru_path(level - 1)      <= '0';   -- used for next replacement
 
         return plru_replacement(low_idx   => mid_idx, 
                                 high_idx  => high_idx, 
