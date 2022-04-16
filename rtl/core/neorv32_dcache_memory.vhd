@@ -333,7 +333,7 @@ begin
                                     mid_idx: natural; 
                                     level: natural) return natural is
       -- see NOTE below: may not want to instantiate this and instead set it on the first iteration of the function
-      variable prev_acc_loc: integer := to_integer(unsigned(not history.to_be_replaced)); -- PLRU comparison value
+      variable prev_acc_loc: integer := to_integer(unsigned(not history.plru_set)); -- PLRU comparison value
 
       -- using the constant block_precsion instead (they share the same value)
       -- variable max_level: natural := index_to_f(DCACHE_NUM_SETS);   
@@ -347,18 +347,18 @@ begin
       -- This may be a problem since the function is recursive
 
       -- if level = 1 then
-      --   prev_acc_loc = to_integer(unsigned(not history.to_be_replaced));
+      --   prev_acc_loc = to_integer(unsigned(not history.plru_set));
       -- end if;
 
       if mid_idx < prev_acc_loc then -- call algorithm on the lower half, update current bit to '0'
-        history.plru_set(mid_idx) <= '0';   -- history.to_be_replaced needs to be changed to a ulogic vector?
+        history.plru_set(mid_idx) <= '0'; 
 
         return plru_replacement(low_idx   => low_idx, 
                                 high_idx  => mid_idx, 
                                 mid_idx   => high_idx / 2 + low_idx,
                                 level     => level + 1);
       elsif mid_idx > prev_acc_loc then -- call algorithm on the upper half, update current bit to '1'
-        history.plru_set(mid_idx) <= '1';   -- history.to_be_replaced needs to be changed to a ulogic vector?
+        history.plru_set(mid_idx) <= '1';
 
         return plru_replacement(low_idx   => mid_idx, 
                                 high_idx  => high_idx, 
