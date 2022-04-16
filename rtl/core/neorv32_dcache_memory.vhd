@@ -368,7 +368,7 @@ begin
       end if;
 
       -- algorithm has ended => set the plru_set to the to_be_replaced
-        history.to_be_replaced <= history.plru_set;
+      history.to_be_replaced <= history.plru_set;
 
       return 1;   -- stop algorithm if no conditions are met
       end function plru_replacement;
