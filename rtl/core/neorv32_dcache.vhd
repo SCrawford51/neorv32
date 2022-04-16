@@ -255,8 +255,8 @@ begin
         elsif (bus_ack_i = '1') then -- ACK = write to cache and get next word
           cache.ctrl_we <= '1'; -- write to cache
           if (and_reduce_f(ctrl.addr_reg((2+cache_offset_size_c)-1 downto 2)) = '1') then -- block complete?
-            cache.ctrl_tag_we   <= '1'; -- current block is valid now
-            cache.ctrl_valid_we <= '1'; -- write tag of current address
+            cache.ctrl_tag_we   <= '1'; -- write tag of current address
+            cache.ctrl_valid_we <= '1'; -- current block is valid now
             ctrl.state_nxt      <= S_CACHE_RESYNC_0;
           else -- get next word
             ctrl.addr_reg_nxt <= std_ulogic_vector(unsigned(ctrl.addr_reg) + 4);

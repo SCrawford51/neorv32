@@ -695,14 +695,15 @@ begin
     clk_i          => clk_i,         -- global clock, rising edge
     rstn_i         => sys_rstn,      -- global reset, low-active, async
     -- controller interface a --
-    ca_bus_addr_i  => cpu_d.addr,    -- bus access address
-    ca_bus_rdata_o => cpu_d.rdata,   -- bus read data
-    ca_bus_wdata_i => cpu_d.wdata,   -- bus write data
-    ca_bus_ben_i   => cpu_d.ben,     -- byte enable
-    ca_bus_we_i    => cpu_d.we,      -- write enable
-    ca_bus_re_i    => cpu_d.re,      -- read enable
-    ca_bus_ack_o   => cpu_d.ack,     -- bus transfer acknowledge
-    ca_bus_err_o   => cpu_d.err,     -- bus transfer error
+    ca_bus_addr_i  => d_cache.addr,  -- bus access address
+    ca_bus_rdata_o => d_cache.rdata, -- bus read data
+    ca_bus_wdata_i => d_cache.wdata, -- bus write data
+    ca_bus_ben_i   => d_cache.ben,   -- byte enable
+    ca_bus_we_i    => d_cache.we,    -- write enable
+    ca_bus_re_i    => d_cache.re,    -- read enable
+    ca_bus_lock_i  => d_cache.lock,  -- exclusive access request
+    ca_bus_ack_o   => d_cache.ack,   -- bus transfer acknowledge
+    ca_bus_err_o   => d_cache.err,   -- bus transfer error
     -- controller interface b --
     cb_bus_addr_i  => i_cache.addr,  -- bus access address
     cb_bus_rdata_o => i_cache.rdata, -- bus read data
