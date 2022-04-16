@@ -367,9 +367,6 @@ begin
 
       end if;
 
-      -- algorithm has ended => set the plru_set to the to_be_replaced
-      history.to_be_replaced <= history.plru_set;
-
       return 1;   -- stop algorithm if no conditions are met
       end function plru_replacement;
 
@@ -378,13 +375,14 @@ begin
         history.re_ff <= host_re_i;
         if (invalidate_i = '1') then -- invalidate whole cache
           history.plru_set <= (others => '1');
-          history.to_be_replaced <= history.plru_set;
         elsif (history.re_ff = '1') and (or_reduce_f(hit) = '1') and (ctrl_en_i = '0') then -- do plru on hit
+          -- NOTE: this function updates the history.plru_set signal
           plru_replacement(low_idx => 0, 
                           high_idx => DCACHE_NUM_SETS - 1,
                           mid_idx  => (DCACHE_NUM_SETS - 1) / 2,  
                           level    => 1); 
         end if;
+        history.to_be_replaced <= history.plru_set;
       end if;
     end process plru_access_history;
 
