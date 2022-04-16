@@ -153,6 +153,9 @@ architecture neorv32_dcache_memory_rtl of neorv32_dcache_memory is
   signal age : lru_set;
   signal hit_cnt : std_logic_vector(block_precsion-1 downto 0) := x"0";
 
+  -- PLRU signals
+  signal plru_path : std_ulogic_vector(block_precsion-1 downto 0) := x"0";
+
   function maxindex(a : lru_set) return integer is
     variable index : integer := 0;
     variable foundmax : std_logic_vector(block_precsion-1 downto 0) := (others => '0');
@@ -333,7 +336,7 @@ begin
                                     mid_idx: natural; 
                                     level: natural) return natural is
       -- see NOTE below: may not want to instantiate this and instead set it on the first iteration of the function
-      variable prev_acc_loc: integer := to_integer(unsigned(not history.plru_set)); -- PLRU comparison value
+      variable prev_acc_loc: integer := to_integer(plru_path); -- PLRU comparison value
 
       -- using the constant block_precsion instead (they share the same value)
       -- variable max_level: natural := index_to_f(DCACHE_NUM_SETS);   
@@ -347,11 +350,12 @@ begin
       -- This may be a problem since the function is recursive
 
       -- if level = 1 then
-      --   prev_acc_loc = to_integer(unsigned(not history.plru_set));
+      --   prev_acc_loc = to_integer(plru_path);
       -- end if;
 
       if mid_idx < prev_acc_loc then -- call algorithm on the lower half, update current bit to '0'
         history.plru_set(mid_idx) <= '0'; 
+        plru_path(level - 1)      <= '1';
 
         return plru_replacement(low_idx   => low_idx, 
                                 high_idx  => mid_idx, 
@@ -359,6 +363,7 @@ begin
                                 level     => level + 1);
       elsif mid_idx > prev_acc_loc then -- call algorithm on the upper half, update current bit to '1'
         history.plru_set(mid_idx) <= '1';
+        plru_path(level - 1)      <= '0';
 
         return plru_replacement(low_idx   => mid_idx, 
                                 high_idx  => high_idx, 
