@@ -132,7 +132,7 @@ architecture neorv32_dcache_memory_rtl of neorv32_dcache_memory is
   -- access history --
   type history_t is record
     re_ff          : std_ulogic;
-    last_used_set  : std_ulogic_vector(DCACHE_NUM_SETS-1 downto 0);
+    least_used_set : std_ulogic_vector(DCACHE_NUM_SETS-1 downto 0);
     first_set      : std_ulogic_vector(DCACHE_NUM_SETS-1 downto 0);
     to_be_replaced : std_ulogic_vector(DCACHE_NUM_SETS-1 downto 0);
 	  plru_set       : std_ulogic_vector(DCACHE_NUM_SETS-1 downto 0);
@@ -140,7 +140,7 @@ architecture neorv32_dcache_memory_rtl of neorv32_dcache_memory is
   
   signal history : history_t := (
     re_ff          => '0', 
-    last_used_set  => (others => '0'), 
+    least_used_set => (others => '0'), 
     first_set      => (others => '0'), 
     to_be_replaced => (others => '0'),
 	  plru_set       => (others => '0')
@@ -158,9 +158,9 @@ architecture neorv32_dcache_memory_rtl of neorv32_dcache_memory is
   signal rand_data  : std_logic_vector(31 downto 0)  := (others => '0'); 
 
   -- LRU signals
-  type lru_set is array (0 to DCACHE_NUM_SETS-1) of unsigned(7 downto 0);
+  type lru_set is array (0 to DCACHE_NUM_SETS-1) of unsigned(9 downto 0);
   signal age : lru_set := (others => (others => '0'));
-  signal age_cnt : unsigned(7 downto 0) := (others => '0');
+  signal age_cnt : unsigned(9 downto 0) := (others => '0');
   
   -- PLRU signals
   signal plru_path : unsigned(block_precsion-1 downto 0) := (others => '0');
@@ -168,7 +168,7 @@ architecture neorv32_dcache_memory_rtl of neorv32_dcache_memory is
 
   function maxindex(a : lru_set) return integer is
     variable index : integer := 0;
-    variable foundmax : unsigned(7 downto 0) := (others => '0');
+    variable foundmax : unsigned(9 downto 0) := (others => '0');
   begin
     for i in 0 to a'high loop
       if a(i) > foundmax then
@@ -181,7 +181,7 @@ architecture neorv32_dcache_memory_rtl of neorv32_dcache_memory is
 
   function minindex(a : lru_set) return integer is
     variable index : integer := 0;
-    variable foundmin : unsigned(7 downto 0) := (others => '1');
+    variable foundmin : unsigned(9 downto 0) := (others => '1');
   begin
     for i in 0 to a'high loop
       if a(i) < foundmin then
@@ -275,12 +275,15 @@ begin
     if rising_edge(clk_i) then
       if (cache_we = '1') then -- write access from control (full-word)
         age_cnt <= age_cnt + 1;
+        age(to_integer(unsigned(set_select))) <= age_cnt;
         for ii in 0 to DCACHE_NUM_SETS - 1 loop
           if unsigned(set_select) = ii then
             cache_data_memory(ii,to_integer(unsigned(cache_addr))) <= ctrl_wdata_i;
-            age(to_integer(unsigned(set_select))) <= age_cnt;
           end if;
         end loop;
+      elsif (history.re_ff = '1') and (or_reduce_f(hit) = '1') and (ctrl_en_i = '0') then
+        age_cnt <= age_cnt + 1;
+        age(to_integer(unsigned(set_select))) <= age_cnt;
       end if;
       -- read access from host (full-word) --
       for ii in 0 to DCACHE_NUM_SETS - 1 loop
@@ -318,11 +321,11 @@ begin
       if rising_edge(clk_i) then
         history.re_ff <= host_re_i;
         if (invalidate_i = '1') then -- invalidate whole cache
-          history.last_used_set <= (others => '1');
+          history.least_used_set <= (others => '0');
         elsif (history.re_ff = '1') and (or_reduce_f(hit) = '1') and (ctrl_en_i = '0') then -- store last accessed set that caused a hit
-          --history.last_used_set <= std_ulogic_vector(to_unsigned(maxindex(age), history.last_used_set'length));
+          history.least_used_set <= std_ulogic_vector(to_unsigned(minindex(age), history.least_used_set'length));
         end if;
-        history.to_be_replaced <= history.last_used_set;
+        history.to_be_replaced <= history.least_used_set;
       end if;
     end process access_history;
 
@@ -414,7 +417,7 @@ begin
         history.re_ff <= host_re_i;
         if (invalidate_i = '1') then -- invalidate whole cache
           history.first_set <= (others => '1');
-        elsif ((history.re_ff = '1') and (or_reduce_f(hit) = '0')) then -- update counter on a cache miss
+        elsif ((history.re_ff = '1') and (or_reduce_f(hit) = '0') and (ctrl_en_i = '0')) then -- update counter on a cache miss
           fifo_cnt <= fifo_cnt + 1;
           history.first_set <= std_ulogic_vector(fifo_cnt); -- have first block to set to counter value
         end if;
