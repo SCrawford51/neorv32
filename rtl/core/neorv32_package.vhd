@@ -2226,10 +2226,18 @@ package neorv32_package is
   end component;
 
   component random_selector
+    generic (
+      init_seed       : std_logic_vector(31 downto 0);
+      force_const_mul : boolean 
+    );
     port (
       -- Clock, rising edge active.
-      clk_i :        in  std_logic;
-      set_select_o : out std_logic
+      clk_i        : in  std_logic;
+      reseed       : in  std_logic;
+      newseed      : in  std_logic_vector(31 downto 0);
+      rand_ready   : out std_logic;
+      rand_valid   : out std_logic;
+      rand_data    : out std_logic_vector(31 downto 0)
     );
   end component;
 
