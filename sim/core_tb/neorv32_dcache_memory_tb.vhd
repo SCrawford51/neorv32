@@ -1,8 +1,8 @@
 -- #################################################################################################
 -- # << NEORV32 - Cache Memory >>                                                                  #
 -- # ********************************************************************************************* #
--- # Direct mapped (DCACHE_NUM_SETS = 1) or 2-way set-associative (DCACHE_NUM_SETS = 2).           #
--- # Least recently used replacement policy (if DCACHE_NUM_SETS > 1).                              #
+-- # Direct mapped (ASSOCIATIVITY = 1) or 2-way set-associative (ASSOCIATIVITY = 2).           #
+-- # Least recently used replacement policy (if ASSOCIATIVITY > 1).                              #
 -- # Read-only for host, write-only for control. All output signals have one cycle latency.        #
 -- #                                                                                               #
 -- # Cache sets are mapped to individual memory components - no multi-dimensional memory arrays    #
@@ -50,67 +50,67 @@ use neorv32.neorv32_dcache_memory_tb_pkg.all;
 
 entity tb_neorv32_dcache_memory is
   generic (
-    CLOCK_FREQUENCY   : natural := 50000000; -- clock frequency of clk_i in Hz
-    DCACHE_NUM_BLOCKS : natural := 8;        -- number of blocks (min 1), has to be a power of 2
-    DCACHE_BLOCK_SIZE : natural := 64;       -- block size in bytes (min 4), has to be a power of 2
-    DCACHE_NUM_SETS   : natural := 2;        -- associativity; 1=direct-mapped, 2=2-way set-associative
-    SELF_TERM         : boolean := true      -- When true the testbench will stop running if pass/fail has been determined
+    CLOCK_FREQUENCY    : natural := 50000000; -- clock frequency of clk_i in Hz
+    DCACHE_NUM_BLOCKS  : natural := 64;       -- number of blocks (min 1), has to be a power of 2
+    DCACHE_BLOCK_SIZE  : natural := 8;        -- block size in bytes (min 4), has to be a power of 2
+    ASSOCIATIVITY      : natural := 3;        -- associativity; 2**(n-1)-way 1=direct-mapped, 2=2-way set-associative, 3=4-way set associative
+    DCACHE_REPLACE_POL : natural := 3;        -- cache replacement policy; 1=LRU, 2=Pseudo-LRU, 3=FIFO, 4=Random
+    SELF_TERM          : boolean := true      -- When true the testbench will stop running if pass/fail has been determined
   );
 end tb_neorv32_dcache_memory;
 
 architecture tb_neorv32_dcache_memory_rtl of tb_neorv32_dcache_memory is
 
   -- cache layout --
-  constant CACHE_OFFSET_SIZE_C : natural                                       := index_size_f(DCACHE_BLOCK_SIZE/4);                         -- offset addresses full 32-bit words
-  constant CACHE_INDEX_SIZE_C  : natural                                       := index_size_f(DCACHE_NUM_BLOCKS);
-  constant CACHE_ENTRIES_C     : integer                                       := DCACHE_NUM_BLOCKS * (DCACHE_BLOCK_SIZE/4);                 -- number of 32-bit entries (per set)
-  constant CACHE_TAB_INC       : integer                                       := 2**(CACHE_OFFSET_SIZE_C + CACHE_INDEX_SIZE_C + 2 - 1) - 1; -- add two for byte offset
-  constant CACHE_OFFSET_INC    : integer                                       := 2**(CACHE_OFFSET_SIZE_C - 1) - 1;
-  constant CACHE_INDEX_INC     : integer                                       := 2**(CACHE_INDEX_SIZE_C - 1) - 1;
+  constant cache_offset_size_c : natural                                     := DCACHE_BLOCK_SIZE/4;
+  constant cache_offset_bits_c : natural                                     := num_bits_f(cache_offset_size_c-1);
+  constant cache_num_sets_c    : natural                                     := DCACHE_NUM_BLOCKS/ASSOCIATIVITY;
+  constant cache_index_bits_c  : natural                                     := num_bits_f(cache_num_sets_c-1);
 
   -- internals - hands off! --
-  constant T_CLOCK_C           : time                                          := (1 sec) / CLOCK_FREQUENCY;
-  constant SELF_TERM_TIME      : time                                          := 1 ms;
-  constant MAX_CYCLES          : natural                                       := SELF_TERM_TIME / T_CLOCK_C;
+  constant t_clock_c           : time                                        := (1 sec) / CLOCK_FREQUENCY;
+  constant self_term_c         : time                                        := 1 ms;
+  constant max_cycles_c        : natural                                     := self_term_c / t_clock_c;
+  constant rand_setup_cycles_c : natural                                     := 4*624;
 
   -- generators --
-  signal run_tb                : std_ulogic                                    := '1';
-  signal clk_gen               : std_ulogic                                    := '0';
-  signal rst_gen               : std_ulogic                                    := '0';
+  signal run_tb                : std_ulogic                                  := '1';
+  signal clk_gen               : std_ulogic                                  := '0';
+  signal rst_gen               : std_ulogic                                  := '0';
 
   -- testbench signals
-  signal curr_addr             : unsigned(31 downto 0)                         := (others => '0');
-  signal curr_set              : unsigned(31 downto 0)                         := (others => '0');
-  signal init_mem              : std_ulogic                                    := '1';
-  signal ctrl_en               : std_ulogic                                    := '0';
-  signal ctrl_we               : std_ulogic                                    := '0';
-  signal ctrl_tag_we           : std_ulogic                                    := '0';
-  signal ctrl_valid_we         : std_ulogic                                    := '0';
-  signal ctrl_invalid_we       : std_ulogic                                    := '0';
-  signal ctrl_addr             : std_ulogic_vector(31 downto 0)                := x"00000000";
-  signal ctrl_wdata            : std_ulogic_vector(31 downto 0)                := x"00000000";
+  signal prev_addr             : unsigned(31 downto 0)                       := x"00000000";
+  signal curr_addr             : unsigned(31 downto 0)                       := x"00000000";
+  signal init_mem              : std_ulogic                                  := '1';
+  signal ctrl_en               : std_ulogic                                  := '0';
+  signal ctrl_we               : std_ulogic                                  := '0';
+  signal ctrl_tag_we           : std_ulogic                                  := '0';
+  signal ctrl_valid_we         : std_ulogic                                  := '0';
+  signal ctrl_invalid_we       : std_ulogic                                  := '0';
+  signal ctrl_addr             : std_ulogic_vector(31 downto 0)              := x"00000000";
+  signal ctrl_wdata            : std_ulogic_vector(31 downto 0)              := x"00000000";
 
-  type host_rdata_t is array (0 to DCACHE_NUM_SETS-1) of std_ulogic_vector(31 downto 0);
+  type host_rdata_t is array (0 to ASSOCIATIVITY-1) of std_ulogic_vector(31 downto 0);
   
-  signal host_re               : std_ulogic                                    := '0';
-  signal host_addr             : std_ulogic_vector(31 downto 0)                := x"00000000";
+  signal host_re               : std_ulogic                                  := '0';
+  signal host_addr             : std_ulogic_vector(31 downto 0)              := x"00000000";
   signal host_rdata            : host_rdata_t;
 
-  signal hit                   : std_ulogic_vector(DCACHE_NUM_SETS-1 downto 0) := (others => '0');
+  signal hit                   : std_ulogic_vector(ASSOCIATIVITY-1 downto 0) := (others => '0');
 
-  signal timeout_err           : std_ulogic                                    := '0';
-  signal invalid_err           : std_ulogic                                    := '0';
-  signal invalid_block_err     : std_ulogic                                    := '0';
-  signal bad_data_read_err     : std_ulogic                                    := '0';
-  signal data_read_err         : std_ulogic                                    := '0';
-  signal tb_error              : std_ulogic                                    := '0';
-  signal tb_finished           : std_ulogic                                    := '0';
+  signal timeout_err           : std_ulogic                                  := '0';
+  signal invalid_err           : std_ulogic                                  := '0';
+  signal invalid_block_err     : std_ulogic                                  := '0';
+  signal bad_data_read_err     : std_ulogic                                  := '0';
+  signal data_read_err         : std_ulogic                                  := '0';
+  signal tb_error              : std_ulogic                                  := '0';
+  signal tb_finished           : std_ulogic                                  := '0';
   
 begin
 
   -- Clock/Reset Generator ---------------------------------------------------------------------
   -- -------------------------------------------------------------------------------------------
-  clk_gen <= not clk_gen after (T_CLOCK_C/2) when run_tb = '1' else '0';
+  clk_gen <= not clk_gen after (t_clock_c/2) when run_tb = '1' else '0';
 
   -- Testbench error/completion messages -------------------------------------------------------
   -- -------------------------------------------------------------------------------------------
@@ -130,7 +130,7 @@ begin
       if rising_edge(clk_gen) then
         sim_time := sim_time + 1;
         tb_error <= timeout_err or invalid_err or invalid_block_err or bad_data_read_err or data_read_err;
-        if sim_time > MAX_CYCLES then
+        if sim_time > max_cycles_c then
           run_tb      <= '0';
           timeout_err <= '1';
         elsif tb_error = '1' then
@@ -145,9 +145,18 @@ begin
   -- Main control process ----------------------------------------------------------------------
   -- -------------------------------------------------------------------------------------------
   run_test : process
+    variable init_rand   : boolean := true;
+    variable write_num   : natural := 0;
+    variable offset_addr : natural := 0;
   begin
-    if init_mem = '1' then -- Fill cache from memory at beginning of testbench
-      if curr_set < DCACHE_NUM_SETS then
+    if DCACHE_REPLACE_POL = 4 and init_rand then
+      wait for rand_setup_cycles_c*t_clock_c;
+      wait until rising_edge(clk_gen);
+      init_rand := false;
+    elsif init_mem = '1' then -- Fill cache from memory at beginning of testbench
+      if write_num < DCACHE_NUM_BLOCKS * cache_offset_size_c then
+
+        write_num := write_num + 1;
 
         wait until rising_edge(clk_gen); -- Update write address
         ctrl_en       <= '1';
@@ -167,16 +176,12 @@ begin
 
         wait until rising_edge(clk_gen); -- One clock cycle to change hit to true
         host_re       <= '0';
-        if curr_addr mod (CACHE_ENTRIES_C - 1) = 0 then -- Calculate next address
-          curr_set  <= curr_set  + 1;
-          curr_addr <= curr_addr + 1;
-        else
-          curr_addr <= curr_addr + 1;
-        end if;
+        prev_addr     <= curr_addr;
+        curr_addr     <= curr_addr + 4; 
 
         wait until rising_edge(clk_gen); -- Change read address to not match write address
         host_re       <= '1';
-        host_addr     <= std_ulogic_vector(curr_addr);
+        host_addr     <= std_ulogic_vector(prev_addr);
   
         wait until rising_edge(clk_gen); -- One cycle delay to change hit to false
         host_re       <= '0';
@@ -198,45 +203,48 @@ begin
       host_addr         <= x"00000000";
       host_re           <= '1';
 
-      wait for 5*T_CLOCK_C;
+      wait for 2*t_clock_c;
       wait until rising_edge(clk_gen);
+      host_re           <= '0';
       ctrl_invalid_we   <= '0';
       invalid_err       <= or_reduce_f(hit);
 
       -- Revalidate block, attempt a read and report error if unsuccessful
-      wait for 5*T_CLOCK_C;
+      wait for 2*t_clock_c;
       wait until rising_edge(clk_gen);
       ctrl_valid_we     <= '1';
+      ctrl_tag_we       <= '1';
       ctrl_en           <= '1';
 
       wait until rising_edge(clk_gen);
       ctrl_en           <= '0';
       host_re           <= '1';
 
-      wait for 5*T_CLOCK_C;
+      wait for 2*t_clock_c;
       wait until rising_edge(clk_gen);
       ctrl_valid_we     <= '0';
+      ctrl_tag_we       <= '0';
       invalid_block_err <= not(and_reduce_f(hit));
-      host_addr         <= std_ulogic_vector(to_unsigned(DCACHE_NUM_BLOCKS*CACHE_ENTRIES_C - 1, 32));
+      host_addr         <= std_ulogic_vector(to_unsigned(DCACHE_NUM_BLOCKS+1, 32));
 
       -- Tests while sets are valid
       -- Read data that is not in cache, report error if successful
-      wait for 5*T_CLOCK_C;
+      wait for 2*t_clock_c;
       wait until rising_edge(clk_gen);
       bad_data_read_err <= or_reduce_f(hit);
       host_re           <= '0';
 
       -- Write then read, report error if unsuccessful
-      wait for 5*T_CLOCK_C;
+      wait for 2*t_clock_c;
       wait until rising_edge(clk_gen);
       ctrl_en           <= '1';
       ctrl_we           <= '1';
       ctrl_tag_we       <= '1';
       ctrl_valid_we     <= '1';
-      ctrl_addr         <= std_ulogic_vector(to_unsigned(DCACHE_NUM_BLOCKS*CACHE_ENTRIES_C - 1, 32));
-      ctrl_wdata        <= cache_ext_mem(DCACHE_NUM_BLOCKS*CACHE_ENTRIES_C - 1); -- From neorv32_dcache_memory_tb_pkg.vhd (run dmem_gen.py to generate)
+      ctrl_addr         <= std_ulogic_vector(to_unsigned(DCACHE_NUM_BLOCKS+1, 32));
+      ctrl_wdata        <= cache_ext_mem(DCACHE_NUM_BLOCKS+1); -- From neorv32_dcache_memory_tb_pkg.vhd (run dmem_gen.py to generate)
 
-      wait for 5*T_CLOCK_C;
+      wait for 2*t_clock_c;
       wait until rising_edge(clk_gen);
       ctrl_en           <= '0';
       ctrl_we           <= '0';
@@ -244,11 +252,11 @@ begin
       ctrl_valid_we     <= '0';
       host_re           <= '1';
 
-      wait for 5*T_CLOCK_C;
+      wait for 2*t_clock_c;
       wait until rising_edge(clk_gen);
       data_read_err     <= not(or_reduce_f(hit));
 
-      wait for 5*T_CLOCK_C;
+      wait for 2*t_clock_c;
       wait until rising_edge(clk_gen);
       host_re           <= '0';
       tb_finished       <= '1';
@@ -260,12 +268,12 @@ begin
   -- Design Under Test--------------------------------------------------------------------------
   -- -------------------------------------------------------------------------------------------
   -- Generate loop allows testing all associativity options at once
-  n_way_assoc_mem : for n in 0 to DCACHE_NUM_SETS-1 generate --actually (2^n)-way associative memory
+  n_way_assoc_mem : for n in 0 to ASSOCIATIVITY-1 generate --actually (2^n)-way associative memory
     neorv32_dcache_memory_inst_x: neorv32_dcache_memory
     generic map (
-      DCACHE_NUM_BLOCKS => DCACHE_NUM_BLOCKS/(n+1), -- number of blocks (min 1), has to be a power of 2
-      DCACHE_BLOCK_SIZE => DCACHE_BLOCK_SIZE/(n+1), -- block size in bytes (min 4), has to be a power of 2
-      DCACHE_NUM_SETS   => n+1                      -- associativity; 0=direct-mapped, 1=2-way set-associative
+      DCACHE_NUM_BLOCKS => DCACHE_NUM_BLOCKS,       -- number of blocks (min 1), has to be a power of 2
+      DCACHE_BLOCK_SIZE => DCACHE_BLOCK_SIZE,       -- block size in bytes (min 4), has to be a power of 2
+      ASSOCIATIVITY   => 2**n                     -- associativity; 0=direct-mapped, 1=2-way set-associative
     )
     port map (
       -- global control --
