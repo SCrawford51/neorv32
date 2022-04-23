@@ -1,8 +1,8 @@
 -- #################################################################################################
 -- # << NEORV32 - Cache Memory >>                                                                  #
 -- # ********************************************************************************************* #
--- # Direct mapped (DCACHE_NUM_SETS = 1) or 2-way set-associative (DCACHE_NUM_SETS = 2).           #
--- # Least recently used replacement policy (if DCACHE_NUM_SETS > 1).                              #
+-- # Direct mapped (ASSOCIATIVITY = 1) or 2-way set-associative (ASSOCIATIVITY = 2).           #
+-- # Least recently used replacement policy (if ASSOCIATIVITY > 1).                              #
 -- # Read-only for host, write-only for control. All output signals have one cycle latency.        #
 -- #                                                                                               #
 -- # Cache sets are mapped to individual memory components - no multi-dimensional memory arrays    #
@@ -49,9 +49,9 @@ use neorv32.neorv32_package.all;
 
 entity neorv32_dcache_memory is
   generic (
-    DCACHE_NUM_BLOCKS  : natural := 4;  -- number of blocks (min 1), has to be a power of 2
-    DCACHE_BLOCK_SIZE  : natural := 16; -- block size in bytes (min 4), has to be a power of 2
-    DCACHE_NUM_SETS    : natural := 1;  -- associativity; 1=direct-mapped, 2=2-way set-associative
+    DCACHE_NUM_BLOCKS  : natural := 64; -- number of blocks (min 1), has to be a power of 2
+    DCACHE_BLOCK_SIZE  : natural := 4;  -- block size in bytes (min 4), has to be a power of 2
+    ASSOCIATIVITY      : natural := 1;  -- associativity; 1=direct-mapped, 2=2-way set-associative
     DCACHE_REPLACE_POL : natural := 1   -- cache replacement policy; 1=LRU, 2=Pseudo-LRU, 3=FIFO, 4=Random
   );
   port (
@@ -78,31 +78,30 @@ end neorv32_dcache_memory;
 architecture neorv32_dcache_memory_rtl of neorv32_dcache_memory is
 
   -- cache layout --
-  constant cache_offset_size_c : natural := index_size_f(DCACHE_BLOCK_SIZE/4); -- offset addresses full 32-bit words
-  constant cache_index_size_c  : natural := index_size_f(DCACHE_NUM_BLOCKS);
+  constant cache_offset_size_c : natural := num_bits_f((DCACHE_BLOCK_SIZE/4)-1); -- offset addresses full 32-bit words
+  constant cache_index_size_c  : natural := num_bits_f((DCACHE_NUM_BLOCKS/ASSOCIATIVITY)-1);
   constant cache_tag_size_c    : natural := 32 - (cache_offset_size_c + cache_index_size_c + 2); -- 2 additional bits for byte offset
-  constant cache_entries_c     : natural := DCACHE_NUM_BLOCKS * (DCACHE_BLOCK_SIZE/4); -- number of 32-bit entries (per set)
-  constant block_precsion      : natural := index_size_f(DCACHE_NUM_SETS) + 1; 
+  constant block_precision     : natural := num_bits_f(ASSOCIATIVITY-1); 
+  constant num_sets            : natural := DCACHE_NUM_BLOCKS / ASSOCIATIVITY;
 
-  -- status flag memory --
-  type valid_flag_t is array (0 to DCACHE_NUM_SETS-1) of std_ulogic_vector(DCACHE_NUM_BLOCKS-1 downto 0);  
-  signal valid_flags : valid_flag_t                                := (others => (others => '0'));
-  signal valid       : std_ulogic_vector(DCACHE_NUM_SETS downto 0) := (others => '0'); -- valid flag read data
+  -- status flag memory -- 
+  signal valid_flags : std_ulogic_vector(DCACHE_NUM_BLOCKS-1 downto 0) := (others => '0');
+  signal valid       : std_ulogic_vector(ASSOCIATIVITY-1 downto 0)     := (others => '0'); -- valid flag read data
 
   -- tag memory --
-  type tag_mem_t is array (0 to DCACHE_NUM_SETS-1, 0 to DCACHE_NUM_BLOCKS-1) of std_ulogic_vector(cache_tag_size_c-1 downto 0);  
-  signal tag_mem     : tag_mem_t := (others => (others => (others => '0')));
+  type tag_mem_t is array (0 to DCACHE_NUM_BLOCKS-1) of std_ulogic_vector(cache_tag_size_c-1 downto 0);  
+  signal tag_mem     : tag_mem_t := (others => (others => '0'));
 
-  type tag_rd_t is array (0 to DCACHE_NUM_SETS-1) of std_ulogic_vector(cache_tag_size_c-1 downto 0);
+  type tag_rd_t is array (0 to ASSOCIATIVITY-1) of std_ulogic_vector(cache_tag_size_c-1 downto 0);
   signal tag         : tag_rd_t  := (others => (others => '0')); -- tag read data
 
   -- access status --
-  signal hit : std_ulogic_vector(block_precsion-1 downto 0) := (others => '0');
+  signal hit : std_ulogic_vector(ASSOCIATIVITY-1 downto 0) := (others => '0');
 
   -- access address decomposition --
   type acc_addr_t is record
-    tag    : std_ulogic_vector(cache_tag_size_c-1 downto 0);
-    index  : std_ulogic_vector(cache_index_size_c-1 downto 0);
+    tag    : std_ulogic_vector(29 downto cache_index_size_c+cache_offset_size_c);
+    index  : std_ulogic_vector(cache_index_size_c+cache_offset_size_c-1 downto cache_offset_size_c);
     offset : std_ulogic_vector(cache_offset_size_c-1 downto 0);
   end record;
   signal host_acc_addr : acc_addr_t := (
@@ -117,25 +116,24 @@ architecture neorv32_dcache_memory_rtl of neorv32_dcache_memory is
   );
   
   -- cache data memory --
-  type cache_mem_t is array (0 to DCACHE_NUM_SETS-1, 0 to cache_entries_c-1) of std_ulogic_vector(31 downto 0);
+  type cache_mem_t is array (0 to DCACHE_NUM_BLOCKS-1, 0 to cache_offset_size_c) of std_ulogic_vector(31 downto 0);
   signal cache_data_memory : cache_mem_t  := (others => (others => (others => '0')));
 
   -- cache data memory access --
-  type cache_rdata_t is array (0 to DCACHE_NUM_SETS-1) of std_ulogic_vector(31 downto 0);
+  type cache_rdata_t is array (0 to ASSOCIATIVITY-1) of std_ulogic_vector(31 downto 0);
   signal cache_rdata  : cache_rdata_t := (others => (others => '0'));
   signal cache_index  : std_ulogic_vector(cache_index_size_c-1 downto 0) := (others => '0');
   signal cache_offset : std_ulogic_vector(cache_offset_size_c-1 downto 0) := (others => '0');
-  signal cache_addr   : std_ulogic_vector((cache_index_size_c+cache_offset_size_c)-1 downto 0) := (others => '0'); -- index & offset
   signal cache_we     : std_ulogic := '0' ; -- write enable (full-word)
-  signal set_select   : std_ulogic_vector(block_precsion-1 downto 0) := (others => '0');
+  signal way_select   : std_ulogic_vector(block_precision-1 downto 0) := (others => '0');
   
   -- access history --
   type history_t is record
     re_ff          : std_ulogic;
-    least_used_set : std_ulogic_vector(DCACHE_NUM_SETS-1 downto 0);
-    first_set      : std_ulogic_vector(DCACHE_NUM_SETS-1 downto 0);
-    to_be_replaced : std_ulogic_vector(DCACHE_NUM_SETS-1 downto 0);
-	  plru_set       : std_ulogic_vector(DCACHE_NUM_SETS-1 downto 0);
+    least_used_set : std_ulogic_vector(block_precision-1 downto 0);
+    first_set      : std_ulogic_vector(block_precision-1 downto 0);
+    to_be_replaced : std_ulogic_vector(block_precision-1 downto 0);
+	  plru_set       : std_ulogic_vector(block_precision-1 downto 0);
   end record;
   
   signal history : history_t := (
@@ -147,10 +145,10 @@ architecture neorv32_dcache_memory_rtl of neorv32_dcache_memory is
   );
 
   -- FIFO signals
-  signal fifo_cnt : unsigned(block_precsion-1 downto 0) := (others => '0');
+  signal fifo_cnt : unsigned(block_precision-1 downto 0) := (others => '0');
 
   -- Random signals
-  signal rand_dout  : std_logic_vector(block_precsion-1 downto 0) := (others => '0');
+  signal rand_dout  : std_logic_vector(block_precision-1 downto 0) := (others => '0');
   signal reseed     : std_logic := '0';
   signal newseed    : std_logic_vector(31 downto 0) := x"AAAACCCC";
   signal rand_ready : std_logic := '0';
@@ -158,12 +156,12 @@ architecture neorv32_dcache_memory_rtl of neorv32_dcache_memory is
   signal rand_data  : std_logic_vector(31 downto 0)  := (others => '0'); 
 
   -- LRU signals
-  type lru_set is array (0 to DCACHE_NUM_SETS-1) of unsigned(9 downto 0);
+  type lru_set is array (0 to ASSOCIATIVITY-1) of unsigned(9 downto 0);
   signal age : lru_set := (others => (others => '0'));
   signal age_cnt : unsigned(9 downto 0) := (others => '0');
   
   -- PLRU signals
-  signal plru_path : unsigned(block_precsion-1 downto 0) := (others => '0');
+  signal plru_path : unsigned(block_precision-1 downto 0) := (others => '0');
   signal plru_nat  : natural;
 
   function maxindex(a : lru_set) return integer is
@@ -211,25 +209,25 @@ begin
     if rising_edge(clk_i) then
       -- write access --
       if (invalidate_i = '1') then -- invalidate whole cache
-        valid_flags <= (others => (others => '0'));
+        valid_flags <= (others => '0');
       elsif (ctrl_en_i = '1') then
         if (ctrl_invalid_i = '1') then -- make current block invalid
-          for ii in 0 to DCACHE_NUM_SETS - 1 loop
-            if unsigned(set_select) = ii then
-              valid_flags(ii)(to_integer(unsigned(cache_index))) <= '0';
+          for ii in 0 to ASSOCIATIVITY - 1 loop
+            if unsigned(way_select) = ii then
+              valid_flags(to_integer(unsigned(cache_index) & unsigned(way_select)-1)) <= '0';
             end if;
           end loop;
         elsif (ctrl_valid_i = '1') then -- make current block valid
-          for ii in 0 to DCACHE_NUM_SETS - 1 loop
-            if unsigned(set_select) = ii then
-              valid_flags(ii)(to_integer(unsigned(cache_index))) <= '1';
+          for ii in 0 to ASSOCIATIVITY - 1 loop
+            if unsigned(way_select) = ii then
+              valid_flags(to_integer(unsigned(cache_index) & unsigned(way_select)-1)) <= '1';
             end if;
           end loop;
         end if;
       end if;
       -- read access (sync) --
-      for ii in 0 to DCACHE_NUM_SETS - 1 loop
-        valid(ii) <= valid_flags(ii)(to_integer(unsigned(cache_index)));
+      for ii in 0 to ASSOCIATIVITY - 1 loop
+        valid(ii) <= valid_flags(to_integer(unsigned(cache_index) & to_unsigned(ii,way_select'length)-1));
       end loop;
     end if;
   end process status_memory;
@@ -241,14 +239,14 @@ begin
   begin
     if rising_edge(clk_i) then
       if (ctrl_en_i = '1') and (ctrl_tag_we_i = '1') then -- write access
-        for ii in 0 to DCACHE_NUM_SETS - 1 loop
-          if unsigned(set_select) = ii then
-            tag_mem(ii,to_integer(unsigned(cache_index))) <= ctrl_acc_addr.tag;
+        for ii in 0 to ASSOCIATIVITY - 1 loop
+          if unsigned(way_select) = ii then
+            tag_mem(to_integer(unsigned(cache_index) & unsigned(way_select)-1)) <= ctrl_acc_addr.tag;
           end if;
         end loop;
       end if;
-      for ii in 0 to DCACHE_NUM_SETS - 1 loop
-        tag(ii) <= tag_mem(ii,to_integer(unsigned(cache_index)));
+      for ii in 0 to ASSOCIATIVITY - 1 loop
+        tag(ii) <= tag_mem(to_integer(unsigned(cache_index) & to_unsigned(ii,way_select'length)-1));
       end loop;
     end if;
   end process tag_memory;
@@ -257,7 +255,7 @@ begin
   comparator : process(host_acc_addr, tag, valid)
   begin
     hit <= (others => '0');
-    for i in 0 to DCACHE_NUM_SETS-1 loop
+    for i in 0 to ASSOCIATIVITY-1 loop
       if (host_acc_addr.tag = tag(i)) and (valid(i) = '1') then -- Hit
         hit(i) <= '1';
       end if;
@@ -275,19 +273,15 @@ begin
     if rising_edge(clk_i) then
       if (cache_we = '1') then -- write access from control (full-word)
         age_cnt <= age_cnt + 1;
-        age(to_integer(unsigned(set_select))) <= age_cnt;
-        for ii in 0 to DCACHE_NUM_SETS - 1 loop
-          if unsigned(set_select) = ii then
-            cache_data_memory(ii,to_integer(unsigned(cache_addr))) <= ctrl_wdata_i;
-          end if;
-        end loop;
+        age(to_integer(unsigned(way_select))) <= age_cnt;
+        cache_data_memory(to_integer(unsigned(cache_index) & unsigned(way_select)),to_integer(unsigned(cache_offset))) <= ctrl_wdata_i;
       elsif (history.re_ff = '1') and (or_reduce_f(hit) = '1') and (ctrl_en_i = '0') then
         age_cnt <= age_cnt + 1;
-        age(to_integer(unsigned(set_select))) <= age_cnt;
+        age(to_integer(unsigned(way_select))) <= age_cnt;
       end if;
       -- read access from host (full-word) --
-      for ii in 0 to DCACHE_NUM_SETS - 1 loop
-        cache_rdata(ii) <= cache_data_memory(ii,to_integer(unsigned(cache_addr)));
+      for ii in 0 to ASSOCIATIVITY - 1 loop
+        cache_rdata(ii) <= cache_data_memory(to_integer(unsigned(cache_index) & to_unsigned(ii,way_select'length)),to_integer(unsigned(cache_offset)));
       end loop;
     end if;
   end process cache_mem_access;
@@ -297,16 +291,13 @@ begin
   begin
     if rising_edge(clk_i) then
       host_rdata_o <= cache_rdata(0);
-      for ii in 0 to DCACHE_NUM_SETS - 1 loop
+      for ii in 0 to ASSOCIATIVITY - 1 loop
         if hit(ii) = '1' then
           host_rdata_o <= cache_rdata(ii);
         end if;
       end loop;
     end if;
   end process output_mux;
-
-  -- cache block ram access address --
-  cache_addr <= cache_index & cache_offset;
 
   -- cache access select --
   cache_index  <= host_acc_addr.index  when (ctrl_en_i = '0') else ctrl_acc_addr.index;
@@ -330,7 +321,7 @@ begin
     end process access_history;
 
     -- which set is going to be replaced? -> opposite of last used set = least recently used set --
-    set_select <= (others => '0') when (DCACHE_NUM_SETS = 1) else history.to_be_replaced;
+    way_select <= (others => '0') when (ASSOCIATIVITY = 1) else history.to_be_replaced;
   end generate;
   
   -- PLRU Cache Access History -------------------------------------------------------------------
@@ -350,11 +341,11 @@ begin
       -- see NOTE below: may not want to instantiate this and instead set it on the first iteration of the function
       variable prev_acc_loc: integer := to_integer(plru_path); -- PLRU comparison value
 
-      -- using the constant block_precsion instead (they share the same value)
-      -- variable max_level: natural := index_to_f(DCACHE_NUM_SETS);   
+      -- using the constant block_precision instead (they share the same value)
+      -- variable max_level: natural := index_to_f(ASSOCIATIVITY);   
     begin
       -- base case where the max iteration has been passed => stop algorithm
-      if level > block_precsion then  
+      if level > block_precision then  
         return 1;
       end if;
 
@@ -395,8 +386,8 @@ begin
         elsif (history.re_ff = '1') and (or_reduce_f(hit) = '1') and (ctrl_en_i = '0') then -- do plru on hit
           -- NOTE: this function updates the history.plru_set signal
           plru_nat <= plru_replacement(low_idx => 0, 
-                                       high_idx => DCACHE_NUM_SETS-1, 
-                                       mid_idx  => (DCACHE_NUM_SETS-1) / 2, 
+                                       high_idx => ASSOCIATIVITY-1, 
+                                       mid_idx  => (ASSOCIATIVITY-1) / 2, 
                                        level    => 1
           ); 
         end if;
@@ -405,7 +396,7 @@ begin
     end process plru_access_history;
 
     -- select the line that is going to be replaced
-    set_select <= x"0" when (DCACHE_NUM_SETS = 1) else (history.to_be_replaced);
+    way_select <= (others => '0') when (ASSOCIATIVITY = 1) else (history.to_be_replaced);
   end generate;
 
 	-- FIFO Cache Access History -------------------------------------------------------------------
@@ -426,7 +417,7 @@ begin
     end process fifo_access_history;
 
     -- which set is going to be replaced? -> first set --
-    set_select <= (others => '0') when (DCACHE_NUM_SETS = 1) else history.to_be_replaced;
+    way_select <= (others => '0') when (ASSOCIATIVITY = 1) else history.to_be_replaced;
   end generate;
 
   -- Random Cache Access History -------------------------------------------------------------------
@@ -454,14 +445,14 @@ begin
         if (invalidate_i = '1') then -- invalidate whole cache
           history.first_set <= (others => '1');
         elsif (rand_valid = '1') then
-          rand_dout <= rand_data(block_precsion-1 downto 0);
+          rand_dout <= rand_data(block_precision-1 downto 0);
         end if;
         history.to_be_replaced <= std_ulogic_vector(rand_dout);
       end if;
     end process rand_access_history;
     
     -- which set is going to be replaced? -> random set --
-    set_select <= (others => '0') when (DCACHE_NUM_SETS = 1) else history.to_be_replaced;
+    way_select <= (others => '0') when (ASSOCIATIVITY = 1) else history.to_be_replaced;
   end generate;
     
 end neorv32_dcache_memory_rtl;
