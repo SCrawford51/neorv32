@@ -100,6 +100,7 @@ package neorv32_package is
   -- Helper Functions -----------------------------------------------------------------------
   -- -------------------------------------------------------------------------------------------
   function index_size_f(input : natural) return natural;
+  function num_bits_f(input : natural) return natural;
   function cond_sel_natural_f(cond : boolean; val_t : natural; val_f : natural) return natural;
   function cond_sel_int_f(cond : boolean; val_t : integer; val_f : integer) return integer;
   function cond_sel_stdulogicvector_f(cond : boolean; val_t : std_ulogic_vector; val_f : std_ulogic_vector) return std_ulogic_vector;
@@ -1567,7 +1568,7 @@ package neorv32_package is
     generic (
       DCACHE_NUM_BLOCKS : natural; -- number of blocks (min 1), has to be a power of 2
       DCACHE_BLOCK_SIZE : natural; -- block size in bytes (min 4), has to be a power of 2
-      DCACHE_NUM_SETS   : natural  -- associativity / number of sets (1=direct_mapped), has to be a power of 2
+      ASSOCIATIVITY     : natural  -- associativity / number of sets (1=direct_mapped), has to be a power of 2
     );
     port (
       -- global control --
@@ -1602,7 +1603,7 @@ package neorv32_package is
     generic (
       DCACHE_NUM_BLOCKS  : natural := 4;  -- number of blocks (min 1), has to be a power of 2
       DCACHE_BLOCK_SIZE  : natural := 16; -- block size in bytes (min 4), has to be a power of 2
-      DCACHE_NUM_SETS    : natural := 1;  -- associativity; 1=direct-mapped, 2=2-way set-associative
+      ASSOCIATIVITY      : natural := 1;  -- associativity; 1=direct-mapped, 2=2-way set-associative
       DCACHE_REPLACE_POL : natural := 1   -- cache replacement policy; 1=LRU, 2=Pseudo-LRU, 3=FIFO, 4=Random
     );
     port (
@@ -2324,7 +2325,7 @@ end neorv32_package;
 
 package body neorv32_package is
 
-  -- Function: Minimal required number of bits to represent <input> numbers -----------------
+  -- Function: Minimal required number of bits to represent <input> numbers -----------------     --TODO: This is a log2ceil funciton, doesn't calculate correct bits for input of 0 or 1
   -- -------------------------------------------------------------------------------------------
   function index_size_f(input : natural) return natural is
   begin
@@ -2335,6 +2336,22 @@ package body neorv32_package is
     end loop; -- i
     return 0;
   end function index_size_f;
+
+    -- Function: Minimal required number of bits to represent <input> numbers -----------------
+  -- -------------------------------------------------------------------------------------------
+  function num_bits_f(input : natural) return natural is
+  begin
+    if (input = 0) then
+      return 0;
+    else
+      for i in 1 to natural'high loop
+        if (2**i > input) then
+          return i;
+        end if;
+      end loop; -- i
+    end if;
+    return 0;
+  end function num_bits_f;
 
   -- Function: Conditional select natural ---------------------------------------------------
   -- -------------------------------------------------------------------------------------------
