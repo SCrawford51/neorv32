@@ -84,6 +84,7 @@ architecture neorv32_dcache_memory_rtl of neorv32_dcache_memory is
   constant cache_index_bits_c   : natural := num_bits_f(cache_index_size_c - 1);
   constant cache_tag_bits_c     : natural := 32 - (cache_offset_bits_c + cache_index_bits_c + 2); -- 2 additional bits for byte offset
   constant block_precision_c    : natural := num_bits_f(ASSOCIATIVITY - 1); 
+  constant hit_sync_cycles_c    : natural := 3;
 
   -- status flag memory -- 
   signal valid_flags : std_ulogic_vector(DCACHE_NUM_BLOCKS-1 downto 0) := (others => '0');
@@ -518,5 +519,133 @@ begin
       end if;
     end process rand_access_history;
   end generate;
+  
+  
+  -- PLRU Cache Access History -------------------------------------------------------------------
+  -- -------------------------------------------------------------------------------------------
+--  DCACHE_PLRU_INST : if (DCACHE_REPLACE_POL = 2) generate
+--    plru_access_history: process(clk_i) is
+--    
+--    -- Tree-PLRU algorithm to determine block to select
+--    -- low_idx : index of lowest 'half' of plru bits
+--    -- high_idx: index of highest 'half' of plru bits
+--    -- mid_idx: index of the current root being observed
+--    -- level: which level of the 'tree' the algorithm is currently on
+--    impure function plru_replacement(low_idx: natural;
+--                                    high_idx: natural;
+--                                    mid_idx: natural; 
+--                                    level: natural) return natural is
+--      -- see NOTE below: may not want to instantiate this and instead set it on the first iteration of the function
+--      variable prev_acc_loc: integer := to_integer(plru_path); -- PLRU comparison value
+--
+--      -- using the constant block_precision_c instead (they share the same value)
+--      -- variable max_level: natural := index_to_f(ASSOCIATIVITY);   
+--    begin
+--      -- base case where the max iteration has been passed => stop algorithm
+--      if level > block_precision_c then  
+--        return 1;
+--      end if;
+--
+--      -- NOTE: Not sure if prev_acc_loc will re-instantiate on each call of the function
+--      -- This may be a problem since the function is recursive
+--
+--      -- if level = 1 then
+--      --   prev_acc_loc = to_integer(plru_path);
+--      -- end if;
+--
+--      if mid_idx < prev_acc_loc then -- call algorithm on the lower half, update current bit to '0'
+--        history.plru_way(mid_idx) <= '0'; 
+--        plru_path(level - 1)      <= '1';   -- used for next replacement
+--
+--        return plru_replacement(low_idx   => low_idx, 
+--                                high_idx  => mid_idx, 
+--                                mid_idx   => high_idx / 2 + low_idx,
+--                                level     => level + 1);
+--      elsif mid_idx > prev_acc_loc then -- call algorithm on the upper half, update current bit to '1'
+--        history.plru_way(mid_idx) <= '1';
+--        plru_path(level - 1)      <= '0';   -- used for next replacement
+--
+--        return plru_replacement(low_idx   => mid_idx, 
+--                                high_idx  => high_idx, 
+--                                mid_idx   => high_idx / 2 + low_idx,
+--                                level     => level + 1);
+--
+--      end if;
+--
+--      return 1;   -- stop algorithm if no conditions are met
+--      end function plru_replacement;
+--
+--    begin
+--      if rising_edge(clk_i) then
+--        history.re_ff <= host_re_i;
+--        if (invalidate_i = '1') then -- invalidate whole cache
+--          history.plru_way <= (others => '1');
+--        elsif (history.re_ff = '1') and (or_reduce_f(hit) = '1') and (ctrl_en_i = '0') then -- do plru on hit
+--          -- NOTE: this function updates the history.plru_way signal
+--          plru_nat <= plru_replacement(low_idx => 0, 
+--                                       high_idx => ASSOCIATIVITY-1, 
+--                                       mid_idx  => (ASSOCIATIVITY-1) / 2, 
+--                                       level    => 1
+--          ); 
+--        end if;
+--        history.to_be_replaced <= history.plru_way;
+--      end if;
+--    end process plru_access_history;
+--  end generate;
+
+	-- FIFO Cache Access History -------------------------------------------------------------------
+  -- -------------------------------------------------------------------------------------------
+  DCACHE_FIFO_INST : if (DCACHE_REPLACE_POL = 3) generate
+    fifo_access_history : process(clk_i)
+    begin
+      if rising_edge(clk_i) then
+        if (invalidate_i = '1') then -- invalidate whole cache
+          history.first_way <= (others => (others => '0'));
+        elsif (history.re_ff = '1' and (or_reduce_f(hit) = '0') and (ctrl_en_i = '0')) then -- update counter on a cache miss
+          if fifo_cnt(to_integer(cache_index)) <= block_precision_c then
+            fifo_cnt(to_integer(cache_index)) <= fifo_cnt(to_integer(cache_index)) + 1;
+          else
+            fifo_cnt(to_integer(cache_index)) <= (others => '0');
+          end if;
+        end if;
+        history.first_way(to_integer(cache_index)) <= fifo_cnt(to_integer(cache_index)); -- have first block to set to counter value
+        if (and_reduce_f(std_ulogic_vector(cache_offset)) = '1') then
+          history.to_be_replaced(to_integer(cache_index)) <= history.first_way(to_integer(cache_index)); -- assign first block to be replaced
+        end if;
+      end if;
+    end process fifo_access_history;
+  end generate;
+
+  -- Random Cache Access History -------------------------------------------------------------------
+  -- -------------------------------------------------------------------------------------------
+--  DCACHE_RANDOM_INST : if (DCACHE_REPLACE_POL = 4) generate
+--    random_sel_inst : random_selector -- 32-bit random number generator
+--    generic map (
+--        init_seed       => x"ACACACAC",
+--        force_const_mul => false
+--    )
+--    port map (
+--        clk_i     => clk_i,
+--        reseed    => '0',
+--        newseed   => x"AAAACCCC",
+--        rand_ready => rand_ready,
+--        rand_valid => rand_valid,
+--        rand_data  => rand_data
+--    );
+--
+--    rand_access_history : process(clk_i)
+--    begin
+--      if rising_edge(clk_i) then
+--        history.re_ff <= host_re_i;
+--        rand_ready <= '1';
+--        if (invalidate_i = '1') then -- invalidate whole cache
+--          history.first_way <= (others => '1');
+--        elsif (rand_valid = '1') then
+--          rand_dout <= rand_data(block_precision_c-1 downto 0);
+--        end if;
+--        history.to_be_replaced <= std_ulogic_vector(rand_dout);
+--      end if;
+--    end process rand_access_history;
+--  end generate;
     
 end neorv32_dcache_memory_rtl;
