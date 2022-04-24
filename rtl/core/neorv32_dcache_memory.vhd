@@ -316,7 +316,9 @@ begin
         elsif (history.re_ff = '1') and (or_reduce_f(hit) = '1') and (ctrl_en_i = '0') then -- store last accessed set that caused a hit
           history.least_used_set(to_integer(unsigned(cache_index))) <= std_ulogic_vector(to_unsigned(minindex(age(to_integer(unsigned(cache_index)))(0 to ASSOCIATIVITY-1)), history.least_used_set(to_integer(unsigned(cache_index)))'length));
         end if;
-        history.to_be_replaced(to_integer(unsigned(cache_index))) <= history.least_used_set(to_integer(unsigned(cache_index)));
+        if(and_reduce_f(cache_offset) = '1') then
+          history.to_be_replaced(to_integer(unsigned(cache_index))) <= history.least_used_set(to_integer(unsigned(cache_index)));
+        end if;
       end if;
     end process access_history;
 
