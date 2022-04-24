@@ -81,8 +81,8 @@ architecture neorv32_dcache_memory_rtl of neorv32_dcache_memory is
   constant cache_offset_size_c : natural := num_bits_f((DCACHE_BLOCK_SIZE/4)-1); -- offset addresses full 32-bit words
   constant cache_index_size_c  : natural := num_bits_f((DCACHE_NUM_BLOCKS/ASSOCIATIVITY)-1);
   constant cache_tag_size_c    : natural := 32 - (cache_offset_size_c + cache_index_size_c + 2); -- 2 additional bits for byte offset
-  constant block_precision     : natural := num_bits_f(ASSOCIATIVITY-1); 
-  constant num_sets            : natural := DCACHE_NUM_BLOCKS / ASSOCIATIVITY;
+  constant block_precision_c   : natural := num_bits_f(ASSOCIATIVITY-1); 
+  constant num_sets_c          : natural := DCACHE_NUM_BLOCKS / ASSOCIATIVITY;
 
   -- status flag memory -- 
   signal valid_flags : std_ulogic_vector(DCACHE_NUM_BLOCKS-1 downto 0) := (others => '0');
@@ -125,30 +125,31 @@ architecture neorv32_dcache_memory_rtl of neorv32_dcache_memory is
   signal cache_index  : std_ulogic_vector(cache_index_size_c-1 downto 0) := (others => '0');
   signal cache_offset : std_ulogic_vector(cache_offset_size_c-1 downto 0) := (others => '0');
   signal cache_we     : std_ulogic := '0' ; -- write enable (full-word)
-  signal way_select   : std_ulogic_vector(block_precision-1 downto 0) := (others => '0');
+  type way_sel_t is array (0 to num_sets_c-1) of std_ulogic_vector(block_precision_c-1 downto 0); -- array of sets with selected block or line in each
+  signal way_select   : way_sel_t := (others => (others => '0'));
   
   -- access history --
   type history_t is record
     re_ff          : std_ulogic;
-    least_used_set : std_ulogic_vector(block_precision-1 downto 0);
-    first_set      : std_ulogic_vector(block_precision-1 downto 0);
-    to_be_replaced : std_ulogic_vector(block_precision-1 downto 0);
-	  plru_set       : std_ulogic_vector(block_precision-1 downto 0);
+    least_used_set : way_sel_t;
+    first_set      : std_ulogic_vector(block_precision_c-1 downto 0);
+    to_be_replaced : way_sel_t;
+	  plru_set       : std_ulogic_vector(block_precision_c-1 downto 0);
   end record;
   
   signal history : history_t := (
     re_ff          => '0', 
-    least_used_set => (others => '0'), 
+    least_used_set => (others => (others => '0')), 
     first_set      => (others => '0'), 
-    to_be_replaced => (others => '0'),
+    to_be_replaced => (others => (others => '0')),
 	  plru_set       => (others => '0')
   );
 
   -- FIFO signals
-  signal fifo_cnt : unsigned(block_precision-1 downto 0) := (others => '0');
+  signal fifo_cnt : unsigned(block_precision_c-1 downto 0) := (others => '0');
 
   -- Random signals
-  signal rand_dout  : std_logic_vector(block_precision-1 downto 0) := (others => '0');
+  signal rand_dout  : std_logic_vector(block_precision_c-1 downto 0) := (others => '0');
   signal reseed     : std_logic := '0';
   signal newseed    : std_logic_vector(31 downto 0) := x"AAAACCCC";
   signal rand_ready : std_logic := '0';
@@ -156,15 +157,16 @@ architecture neorv32_dcache_memory_rtl of neorv32_dcache_memory is
   signal rand_data  : std_logic_vector(31 downto 0)  := (others => '0'); 
 
   -- LRU signals
-  type lru_set is array (0 to ASSOCIATIVITY-1) of unsigned(9 downto 0);
-  signal age : lru_set := (others => (others => '0'));
-  signal age_cnt : unsigned(9 downto 0) := (others => '0');
+  --type lru_set is array (0 to num_sets_c-1, 0 to ASSOCIATIVITY-1) of unsigned(9 downto 0);
+  type lru_blks is array (0 to ASSOCIATIVITY-1) of unsigned(9 downto 0); -- small array
+  type lru_sets is array (0 to num_sets_c-1) of lru_blks; -- big array
+  signal age : lru_sets := (others => (others => (others => '0')));
   
   -- PLRU signals
-  signal plru_path : unsigned(block_precision-1 downto 0) := (others => '0');
+  signal plru_path : unsigned(block_precision_c-1 downto 0) := (others => '0');
   signal plru_nat  : natural;
 
-  function maxindex(a : lru_set) return integer is
+  function maxindex(a : lru_blks) return integer is
     variable index : integer := 0;
     variable foundmax : unsigned(9 downto 0) := (others => '0');
   begin
@@ -177,7 +179,7 @@ architecture neorv32_dcache_memory_rtl of neorv32_dcache_memory is
     return index;
   end function;
 
-  function minindex(a : lru_set) return integer is
+  function minindex(a : lru_blks) return integer is
     variable index : integer := 0;
     variable foundmin : unsigned(9 downto 0) := (others => '1');
   begin
@@ -213,21 +215,21 @@ begin
       elsif (ctrl_en_i = '1') then
         if (ctrl_invalid_i = '1') then -- make current block invalid
           for ii in 0 to ASSOCIATIVITY - 1 loop
-            if unsigned(way_select) = ii then
-              valid_flags(to_integer(unsigned(cache_index) & unsigned(way_select)-1)) <= '0';
+            if unsigned(way_select(to_integer(unsigned(cache_index)))) = ii then
+              valid_flags(to_integer(unsigned(cache_index) & unsigned(way_select(to_integer(unsigned(cache_index)))))) <= '0';
             end if;
           end loop;
         elsif (ctrl_valid_i = '1') then -- make current block valid
           for ii in 0 to ASSOCIATIVITY - 1 loop
-            if unsigned(way_select) = ii then
-              valid_flags(to_integer(unsigned(cache_index) & unsigned(way_select)-1)) <= '1';
+            if unsigned(way_select(to_integer(unsigned(cache_index)))) = ii then
+              valid_flags(to_integer(unsigned(cache_index) & unsigned(way_select(to_integer(unsigned(cache_index)))))) <= '1';
             end if;
           end loop;
         end if;
       end if;
       -- read access (sync) --
       for ii in 0 to ASSOCIATIVITY - 1 loop
-        valid(ii) <= valid_flags(to_integer(unsigned(cache_index) & to_unsigned(ii,way_select'length)-1));
+        valid(ii) <= valid_flags(to_integer(unsigned(cache_index) & to_unsigned(ii,way_select(0)'length)-1));
       end loop;
     end if;
   end process status_memory;
@@ -240,13 +242,13 @@ begin
     if rising_edge(clk_i) then
       if (ctrl_en_i = '1') and (ctrl_tag_we_i = '1') then -- write access
         for ii in 0 to ASSOCIATIVITY - 1 loop
-          if unsigned(way_select) = ii then
-            tag_mem(to_integer(unsigned(cache_index) & unsigned(way_select)-1)) <= ctrl_acc_addr.tag;
+          if unsigned(way_select(to_integer(unsigned(cache_index)))) = ii then
+            tag_mem(to_integer(unsigned(cache_index) & unsigned(way_select(to_integer(unsigned(cache_index)))))) <= ctrl_acc_addr.tag;
           end if;
         end loop;
       end if;
       for ii in 0 to ASSOCIATIVITY - 1 loop
-        tag(ii) <= tag_mem(to_integer(unsigned(cache_index) & to_unsigned(ii,way_select'length)-1));
+        tag(ii) <= tag_mem(to_integer(unsigned(cache_index) & to_unsigned(ii,way_select(0)'length)));
       end loop;
     end if;
   end process tag_memory;
@@ -272,16 +274,14 @@ begin
   begin
     if rising_edge(clk_i) then
       if (cache_we = '1') then -- write access from control (full-word)
-        age_cnt <= age_cnt + 1;
-        age(to_integer(unsigned(way_select))) <= age_cnt;
-        cache_data_memory(to_integer(unsigned(cache_index) & unsigned(way_select)),to_integer(unsigned(cache_offset))) <= ctrl_wdata_i;
+        age(to_integer(unsigned(cache_index)))(to_integer(unsigned(way_select(to_integer(unsigned(cache_index)))))) <= age(to_integer(unsigned(cache_index)))(to_integer(unsigned(way_select(to_integer(unsigned(cache_index)))))) + 1;
+        cache_data_memory(to_integer(unsigned(cache_index) & unsigned(way_select(to_integer(unsigned(cache_index))))),to_integer(unsigned(cache_offset))) <= ctrl_wdata_i;
       elsif (history.re_ff = '1') and (or_reduce_f(hit) = '1') and (ctrl_en_i = '0') then
-        age_cnt <= age_cnt + 1;
-        age(to_integer(unsigned(way_select))) <= age_cnt;
+        age(to_integer(unsigned(cache_index)))(to_integer(unsigned(way_select(to_integer(unsigned(cache_index)))))) <= age(to_integer(unsigned(cache_index)))(to_integer(unsigned(way_select(to_integer(unsigned(cache_index)))))) + 1;
       end if;
       -- read access from host (full-word) --
       for ii in 0 to ASSOCIATIVITY - 1 loop
-        cache_rdata(ii) <= cache_data_memory(to_integer(unsigned(cache_index) & to_unsigned(ii,way_select'length)),to_integer(unsigned(cache_offset)));
+        cache_rdata(ii) <= cache_data_memory(to_integer(unsigned(cache_index) & to_unsigned(ii,way_select(0)'length)),to_integer(unsigned(cache_offset)));
       end loop;
     end if;
   end process cache_mem_access;
@@ -312,147 +312,16 @@ begin
       if rising_edge(clk_i) then
         history.re_ff <= host_re_i;
         if (invalidate_i = '1') then -- invalidate whole cache
-          history.least_used_set <= (others => '0');
+          history.least_used_set <= (others => (others => '0'));
         elsif (history.re_ff = '1') and (or_reduce_f(hit) = '1') and (ctrl_en_i = '0') then -- store last accessed set that caused a hit
-          history.least_used_set <= std_ulogic_vector(to_unsigned(minindex(age), history.least_used_set'length));
+          history.least_used_set(to_integer(unsigned(cache_index))) <= std_ulogic_vector(to_unsigned(minindex(age(to_integer(unsigned(cache_index)))(0 to ASSOCIATIVITY-1)), history.least_used_set(to_integer(unsigned(cache_index)))'length));
         end if;
-        history.to_be_replaced <= history.least_used_set;
+        history.to_be_replaced(to_integer(unsigned(cache_index))) <= history.least_used_set(to_integer(unsigned(cache_index)));
       end if;
     end process access_history;
 
     -- which set is going to be replaced? -> opposite of last used set = least recently used set --
-    way_select <= (others => '0') when (ASSOCIATIVITY = 1) else history.to_be_replaced;
-  end generate;
-  
-  -- PLRU Cache Access History -------------------------------------------------------------------
-  -- -------------------------------------------------------------------------------------------
-  DCACHE_PLRU_INST : if (DCACHE_REPLACE_POL = 2) generate
-    plru_access_history: process(clk_i) is
-    
-    -- Tree-PLRU algorithm to determine block to select
-    -- low_idx : index of lowest 'half' of plru bits
-    -- high_idx: index of highest 'half' of plru bits
-    -- mid_idx: index of the current root being observed
-    -- level: which level of the 'tree' the algorithm is currently on
-    impure function plru_replacement(low_idx: natural;
-                                    high_idx: natural;
-                                    mid_idx: natural; 
-                                    level: natural) return natural is
-      -- see NOTE below: may not want to instantiate this and instead set it on the first iteration of the function
-      variable prev_acc_loc: integer := to_integer(plru_path); -- PLRU comparison value
-
-      -- using the constant block_precision instead (they share the same value)
-      -- variable max_level: natural := index_to_f(ASSOCIATIVITY);   
-    begin
-      -- base case where the max iteration has been passed => stop algorithm
-      if level > block_precision then  
-        return 1;
-      end if;
-
-      -- NOTE: Not sure if prev_acc_loc will re-instantiate on each call of the function
-      -- This may be a problem since the function is recursive
-
-      -- if level = 1 then
-      --   prev_acc_loc = to_integer(plru_path);
-      -- end if;
-
-      if mid_idx < prev_acc_loc then -- call algorithm on the lower half, update current bit to '0'
-        history.plru_set(mid_idx) <= '0'; 
-        plru_path(level - 1)      <= '1';   -- used for next replacement
-
-        return plru_replacement(low_idx   => low_idx, 
-                                high_idx  => mid_idx, 
-                                mid_idx   => high_idx / 2 + low_idx,
-                                level     => level + 1);
-      elsif mid_idx > prev_acc_loc then -- call algorithm on the upper half, update current bit to '1'
-        history.plru_set(mid_idx) <= '1';
-        plru_path(level - 1)      <= '0';   -- used for next replacement
-
-        return plru_replacement(low_idx   => mid_idx, 
-                                high_idx  => high_idx, 
-                                mid_idx   => high_idx / 2 + low_idx,
-                                level     => level + 1);
-
-      end if;
-
-      return 1;   -- stop algorithm if no conditions are met
-      end function plru_replacement;
-
-    begin
-      if rising_edge(clk_i) then
-        history.re_ff <= host_re_i;
-        if (invalidate_i = '1') then -- invalidate whole cache
-          history.plru_set <= (others => '1');
-        elsif (history.re_ff = '1') and (or_reduce_f(hit) = '1') and (ctrl_en_i = '0') then -- do plru on hit
-          -- NOTE: this function updates the history.plru_set signal
-          plru_nat <= plru_replacement(low_idx => 0, 
-                                       high_idx => ASSOCIATIVITY-1, 
-                                       mid_idx  => (ASSOCIATIVITY-1) / 2, 
-                                       level    => 1
-          ); 
-        end if;
-        history.to_be_replaced <= history.plru_set;
-      end if;
-    end process plru_access_history;
-
-    -- select the line that is going to be replaced
-    way_select <= (others => '0') when (ASSOCIATIVITY = 1) else (history.to_be_replaced);
-  end generate;
-
-	-- FIFO Cache Access History -------------------------------------------------------------------
-  -- -------------------------------------------------------------------------------------------
-  DCACHE_FIFO_INST : if (DCACHE_REPLACE_POL = 3) generate
-    fifo_access_history : process(clk_i)
-    begin
-      if rising_edge(clk_i) then
-        history.re_ff <= host_re_i;
-        if (invalidate_i = '1') then -- invalidate whole cache
-          history.first_set <= (others => '1');
-        elsif ((history.re_ff = '1') and (or_reduce_f(hit) = '0') and (ctrl_en_i = '0')) then -- update counter on a cache miss
-          fifo_cnt <= fifo_cnt + 1;
-          history.first_set <= std_ulogic_vector(fifo_cnt); -- have first block to set to counter value
-        end if;
-        history.to_be_replaced <= history.first_set; -- assign first block to be replaced
-      end if;
-    end process fifo_access_history;
-
-    -- which set is going to be replaced? -> first set --
-    way_select <= (others => '0') when (ASSOCIATIVITY = 1) else history.to_be_replaced;
-  end generate;
-
-  -- Random Cache Access History -------------------------------------------------------------------
-  -- -------------------------------------------------------------------------------------------
-  DCACHE_RANDOM_INST : if (DCACHE_REPLACE_POL = 4) generate
-    random_sel_inst : random_selector -- 32-bit random number generator
-    generic map (
-        init_seed       => x"ACACACAC",
-        force_const_mul => false
-    )
-    port map (
-        clk_i     => clk_i,
-        reseed    => '0',
-        newseed   => x"AAAACCCC",
-        rand_ready => rand_ready,
-        rand_valid => rand_valid,
-        rand_data  => rand_data
-    );
-
-    rand_access_history : process(clk_i)
-    begin
-      if rising_edge(clk_i) then
-        history.re_ff <= host_re_i;
-        rand_ready <= '1';
-        if (invalidate_i = '1') then -- invalidate whole cache
-          history.first_set <= (others => '1');
-        elsif (rand_valid = '1') then
-          rand_dout <= rand_data(block_precision-1 downto 0);
-        end if;
-        history.to_be_replaced <= std_ulogic_vector(rand_dout);
-      end if;
-    end process rand_access_history;
-    
-    -- which set is going to be replaced? -> random set --
-    way_select <= (others => '0') when (ASSOCIATIVITY = 1) else history.to_be_replaced;
+    way_select(to_integer(unsigned(cache_index))) <= (others => '0') when (ASSOCIATIVITY = 1) else history.to_be_replaced(to_integer(unsigned(cache_index)));
   end generate;
     
 end neorv32_dcache_memory_rtl;
