@@ -84,7 +84,6 @@ architecture neorv32_dcache_memory_rtl of neorv32_dcache_memory is
   constant cache_index_bits_c   : natural := num_bits_f(cache_index_size_c - 1);
   constant cache_tag_bits_c     : natural := 32 - (cache_offset_bits_c + cache_index_bits_c + 2); -- 2 additional bits for byte offset
   constant block_precision_c    : natural := num_bits_f(ASSOCIATIVITY - 1); 
-  constant hit_sync_cycles_c    : natural := 3;
 
   -- status flag memory -- 
   signal valid_flags : std_ulogic_vector(DCACHE_NUM_BLOCKS-1 downto 0) := (others => '0');
@@ -303,7 +302,7 @@ begin
             cache_data_memory(to_integer(cache_index),to_integer(cache_offset)) <= ctrl_wdata_i;
           end if;
         else
-          age(to_integer(unsigned(cache_index)))(to_integer(unsigned(way_select(to_integer(unsigned(cache_index)))))) <= age(to_integer(unsigned(cache_index)))(to_integer(unsigned(way_select(to_integer(unsigned(cache_index)))))) + 1;
+          age(to_integer(cache_index))(to_integer(way_select(to_integer(cache_index)))) <= age(to_integer(cache_index))(to_integer(way_select(to_integer(cache_index)))) + 1;
           if cache_index_size_c = 1 then
             cache_data_memory(to_integer(cache_index & way_select(to_integer(cache_index))),0) <= ctrl_wdata_i;
           else
@@ -312,7 +311,7 @@ begin
         end if;
       elsif (history.re_ff = '1') and (or_reduce_f(hit) = '1') and (ctrl_en_i = '0') then
         if ASSOCIATIVITY > 1 then
-          age(to_integer(unsigned(cache_index)))(to_integer(unsigned(way_select(to_integer(unsigned(cache_index)))))) <= age(to_integer(unsigned(cache_index)))(to_integer(unsigned(way_select(to_integer(unsigned(cache_index)))))) + 1;
+          age(to_integer(cache_index))(to_integer(way_select(to_integer(cache_index)))) <= age(to_integer(cache_index))(to_integer(way_select(to_integer(cache_index)))) + 1;
         end if;
       end if;
       -- read access from host (full-word) --
@@ -361,10 +360,10 @@ begin
         if (invalidate_i = '1') then -- invalidate whole cache
           history.least_used_way <= (others => (others => '0'));
         elsif (history.re_ff = '1') and (or_reduce_f(hit) = '1') and (ctrl_en_i = '0') then -- store last accessed set that caused a hit
-          history.least_used_way(to_integer(unsigned(cache_index))) <= to_unsigned(minindex(age(to_integer(unsigned(cache_index)))(0 to ASSOCIATIVITY-1)), history.least_used_way(to_integer(unsigned(cache_index)))'length);
+          history.least_used_way(to_integer(cache_index)) <= to_unsigned(minindex(age(to_integer(cache_index))(0 to ASSOCIATIVITY-1)), history.least_used_way(0)'length);
         end if;
         if(and_reduce_f(std_ulogic_vector(cache_offset)) = '1') then
-          history.to_be_replaced(to_integer(unsigned(cache_index))) <= history.least_used_way(to_integer(unsigned(cache_index)));
+          history.to_be_replaced(to_integer(cache_index)) <= history.least_used_way(to_integer(cache_index));
         end if;
       end if;
     end process access_history;
@@ -468,34 +467,36 @@ begin
 
   -- Random Cache Access History -------------------------------------------------------------------
   -- -------------------------------------------------------------------------------------------
---  DCACHE_RANDOM_INST : if (DCACHE_REPLACE_POL = 4) generate
---    random_sel_inst : random_selector -- 32-bit random number generator
---    generic map (
---        init_seed       => x"ACACACAC",
---        force_const_mul => false
---    )
---    port map (
---        clk_i     => clk_i,
---        reseed    => '0',
---        newseed   => x"AAAACCCC",
---        rand_ready => rand_ready,
---        rand_valid => rand_valid,
---        rand_data  => rand_data
---    );
---
---    rand_access_history : process(clk_i)
---    begin
---      if rising_edge(clk_i) then
---        history.re_ff <= host_re_i;
---        rand_ready <= '1';
---        if (invalidate_i = '1') then -- invalidate whole cache
---          history.first_way <= (others => '1');
---        elsif (rand_valid = '1') then
---          rand_dout <= rand_data(block_precision_c-1 downto 0);
---        end if;
---        history.to_be_replaced <= std_ulogic_vector(rand_dout);
---      end if;
---    end process rand_access_history;
---  end generate;
+  DCACHE_RANDOM_INST : if (DCACHE_REPLACE_POL = 4) generate
+    random_gen_inst : rng_mt19937 -- 32-bit random number generator
+    generic map (
+        init_seed       => x"ACACACAC",
+        force_const_mul => false
+    ) 
+    port map (
+        clk       => clk_i,
+        rst       => '0',
+        reseed    => '0',
+        newseed   => x"AAAACCCC",
+        out_ready => rand_ready,
+        out_valid => rand_valid,
+        out_data  => rand_data
+    );
+
+    rand_access_history : process(clk_i)
+    begin
+      if rising_edge(clk_i) then
+        rand_ready <= '1';
+        if (invalidate_i = '1') then -- invalidate whole cache
+          history.first_way <= (others => (others => '0'));
+        elsif (rand_valid = '1') then
+          rand_dout <= rand_data(block_precision_c-1 downto 0);
+        end if;
+        if (and_reduce_f(std_ulogic_vector(cache_offset)) = '1') then
+          history.to_be_replaced(to_integer(cache_index)) <= unsigned(rand_dout);
+        end if;
+      end if;
+    end process rand_access_history;
+  end generate;
     
 end neorv32_dcache_memory_rtl;
