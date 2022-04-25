@@ -54,7 +54,7 @@ entity tb_neorv32_dcache_memory is
     DCACHE_NUM_BLOCKS  : natural := 64;       -- number of blocks (min 1), has to be a power of 2
     DCACHE_BLOCK_SIZE  : natural := 8;        -- block size in bytes (min 4), has to be a power of 2
     ASSOCIATIVITY      : natural := 3;        -- associativity; 2**(n-1)-way 1=direct-mapped, 2=2-way set-associative, 3=4-way set associative
-    DCACHE_REPLACE_POL : natural := 3;        -- cache replacement policy; 1=LRU, 2=Pseudo-LRU, 3=FIFO, 4=Random
+    DCACHE_REPLACE_POL : natural := 4;        -- cache replacement policy; 1=LRU, 2=Pseudo-LRU, 3=FIFO, 4=Random
     SELF_TERM          : boolean := true      -- When true the testbench will stop running if pass/fail has been determined
   );
 end tb_neorv32_dcache_memory;
@@ -80,6 +80,7 @@ architecture tb_neorv32_dcache_memory_rtl of tb_neorv32_dcache_memory is
 
   -- testbench signals
   signal prev_addr             : unsigned(31 downto 0)                       := x"00000000";
+  signal next_addr             : unsigned(31 downto 0)                       := x"00000000";
   signal curr_addr             : unsigned(31 downto 0)                       := x"00000000";
   signal init_mem              : std_ulogic                                  := '1';
   signal ctrl_en               : std_ulogic                                  := '0';
@@ -148,17 +149,44 @@ begin
     variable init_rand   : boolean := true;
     variable write_num   : natural := 0;
     variable offset_addr : natural := 0;
+    variable init_read   : boolean := true;
   begin
     if DCACHE_REPLACE_POL = 4 and init_rand then
       wait for rand_setup_cycles_c*t_clock_c;
       wait until rising_edge(clk_gen);
       init_rand := false;
+    elsif init_read = true then
+      wait until rising_edge(clk_gen);
+      init_read     := false;
+      host_re       <= '1';
+      host_addr     <= std_ulogic_vector(curr_addr);
+
+      wait until rising_edge(clk_gen);
+      host_re       <= '0';
     elsif init_mem = '1' then -- Fill cache from memory at beginning of testbench
       if write_num < DCACHE_NUM_BLOCKS * cache_offset_size_c then
 
-        write_num := write_num + 1;
+        if (write_num /= 0) and (write_num mod cache_offset_size_c = 0) then
+          
+          wait until rising_edge(clk_gen);
+          host_re       <= '1';
+          host_addr     <= std_ulogic_vector(prev_addr);
 
-        wait until rising_edge(clk_gen); -- Update write address
+          wait until rising_edge(clk_gen);
+          host_re       <= '0';
+
+          wait for 5*t_clock_c;
+          wait until rising_edge(clk_gen);
+          host_re       <= '1';
+          host_addr     <= std_ulogic_vector(next_addr);
+
+          wait until rising_edge(clk_gen);
+          host_re       <= '0';
+
+          wait for 5*t_clock_c;
+        end if;
+
+        wait until rising_edge(clk_gen);
         ctrl_en       <= '1';
         ctrl_we       <= '1';
         ctrl_tag_we   <= '1';
@@ -166,25 +194,18 @@ begin
         ctrl_addr     <= std_ulogic_vector(curr_addr);
         ctrl_wdata    <= cache_ext_mem(to_integer(curr_addr)); -- From neorv32_dcache_memory_tb_pkg.vhd (run dmem_gen.py to generate)
 
-        wait until rising_edge(clk_gen); -- Enable read
-        ctrl_en       <= '0';
-        ctrl_we       <= '0';
-        ctrl_tag_we   <= '0';
-        ctrl_valid_we <= '0';
-        host_re       <= '1';
-        host_addr     <= std_ulogic_vector(curr_addr);
+        write_num  := write_num + 1;
+        prev_addr  <= curr_addr;
+        next_addr  <= curr_addr + 4; 
 
         wait until rising_edge(clk_gen); -- One clock cycle to change hit to true
-        host_re       <= '0';
-        prev_addr     <= curr_addr;
-        curr_addr     <= curr_addr + 4; 
-
-        wait until rising_edge(clk_gen); -- Change read address to not match write address
-        host_re       <= '1';
-        host_addr     <= std_ulogic_vector(prev_addr);
-  
-        wait until rising_edge(clk_gen); -- One cycle delay to change hit to false
-        host_re       <= '0';
+        if (write_num /= 0) and (write_num mod cache_offset_size_c = 0) then
+          ctrl_en       <= '0';
+          ctrl_we       <= '0';
+          ctrl_tag_we   <= '0';
+          ctrl_valid_we <= '0';
+        end if;
+        curr_addr  <= next_addr;
 
       else
         wait until rising_edge(clk_gen);
@@ -199,18 +220,18 @@ begin
       ctrl_addr         <= x"00000000";
 
       wait until rising_edge(clk_gen);
+      ctrl_invalid_we   <= '0';
       ctrl_en           <= '0';
+
+      wait until rising_edge(clk_gen);
       host_addr         <= x"00000000";
       host_re           <= '1';
 
-      wait for 2*t_clock_c;
       wait until rising_edge(clk_gen);
       host_re           <= '0';
-      ctrl_invalid_we   <= '0';
       invalid_err       <= or_reduce_f(hit);
 
       -- Revalidate block, attempt a read and report error if unsuccessful
-      wait for 2*t_clock_c;
       wait until rising_edge(clk_gen);
       ctrl_valid_we     <= '1';
       ctrl_tag_we       <= '1';
@@ -218,47 +239,54 @@ begin
 
       wait until rising_edge(clk_gen);
       ctrl_en           <= '0';
-      host_re           <= '1';
-
-      wait for 2*t_clock_c;
-      wait until rising_edge(clk_gen);
       ctrl_valid_we     <= '0';
       ctrl_tag_we       <= '0';
+
+      wait until rising_edge(clk_gen);
+      host_re           <= '1';
+
+      wait until rising_edge(clk_gen);
+      host_re           <= '0';
+
+      wait until rising_edge(clk_gen);
       invalid_block_err <= not(and_reduce_f(hit));
-      host_addr         <= std_ulogic_vector(to_unsigned(DCACHE_NUM_BLOCKS+1, 32));
 
       -- Tests while sets are valid
       -- Read data that is not in cache, report error if successful
-      wait for 2*t_clock_c;
       wait until rising_edge(clk_gen);
-      bad_data_read_err <= or_reduce_f(hit);
+      host_re           <= '1';
+      host_addr         <= std_ulogic_vector(to_unsigned((DCACHE_NUM_BLOCKS * cache_offset_size_c) + 1, 32));
+
+      wait until rising_edge(clk_gen);
       host_re           <= '0';
+      bad_data_read_err <= or_reduce_f(hit);
 
       -- Write then read, report error if unsuccessful
-      wait for 2*t_clock_c;
       wait until rising_edge(clk_gen);
       ctrl_en           <= '1';
       ctrl_we           <= '1';
       ctrl_tag_we       <= '1';
       ctrl_valid_we     <= '1';
-      ctrl_addr         <= std_ulogic_vector(to_unsigned(DCACHE_NUM_BLOCKS+1, 32));
-      ctrl_wdata        <= cache_ext_mem(DCACHE_NUM_BLOCKS+1); -- From neorv32_dcache_memory_tb_pkg.vhd (run dmem_gen.py to generate)
+      ctrl_addr         <= std_ulogic_vector(to_unsigned((DCACHE_NUM_BLOCKS * cache_offset_size_c) + 1, 32));
+      ctrl_wdata        <= cache_ext_mem(((DCACHE_NUM_BLOCKS * cache_offset_size_c) + 1)*4); -- From neorv32_dcache_memory_tb_pkg.vhd (run dmem_gen.py to generate)
 
-      wait for 2*t_clock_c;
       wait until rising_edge(clk_gen);
       ctrl_en           <= '0';
       ctrl_we           <= '0';
       ctrl_tag_we       <= '0';
       ctrl_valid_we     <= '0';
+
+      wait until rising_edge(clk_gen);
       host_re           <= '1';
 
-      wait for 2*t_clock_c;
+      wait until rising_edge(clk_gen);
+      host_re           <= '0';
+
       wait until rising_edge(clk_gen);
       data_read_err     <= not(or_reduce_f(hit));
 
       wait for 2*t_clock_c;
       wait until rising_edge(clk_gen);
-      host_re           <= '0';
       tb_finished       <= '1';
 
     end if;  --init_mem = '1'
@@ -271,9 +299,10 @@ begin
   n_way_assoc_mem : for n in 0 to ASSOCIATIVITY-1 generate --actually (2^n)-way associative memory
     neorv32_dcache_memory_inst_x: neorv32_dcache_memory
     generic map (
-      DCACHE_NUM_BLOCKS => DCACHE_NUM_BLOCKS,       -- number of blocks (min 1), has to be a power of 2
-      DCACHE_BLOCK_SIZE => DCACHE_BLOCK_SIZE,       -- block size in bytes (min 4), has to be a power of 2
-      ASSOCIATIVITY   => 2**n                     -- associativity; 0=direct-mapped, 1=2-way set-associative
+      DCACHE_NUM_BLOCKS  => DCACHE_NUM_BLOCKS,      -- number of blocks (min 1), has to be a power of 2
+      DCACHE_BLOCK_SIZE  => DCACHE_BLOCK_SIZE,      -- block size in bytes (min 4), has to be a power of 2
+      ASSOCIATIVITY      => 2**n,                   -- associativity; 0=direct-mapped, 1=2-way set-associative
+      DCACHE_REPLACE_POL => DCACHE_REPLACE_POL      -- cache replacement policy; 1=LRU, 2=Pseudo-LRU, 3=FIFO, 4=Random
     )
     port map (
       -- global control --

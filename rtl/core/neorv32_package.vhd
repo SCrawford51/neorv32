@@ -2227,22 +2227,6 @@ package neorv32_package is
     );
   end component;
 
-  component random_selector
-    generic (
-      init_seed       : std_logic_vector(31 downto 0);
-      force_const_mul : boolean 
-    );
-    port (
-      -- Clock, rising edge active.
-      clk_i        : in  std_logic;
-      reseed       : in  std_logic;
-      newseed      : in  std_logic_vector(31 downto 0);
-      rand_ready   : out std_logic;
-      rand_valid   : out std_logic;
-      rand_data    : out std_logic_vector(31 downto 0)
-    );
-  end component;
-
   component rng_mt19937
     generic (
       init_seed       : std_logic_vector(31 downto 0);
@@ -2253,7 +2237,7 @@ package neorv32_package is
       rst       : in  std_logic;
       reseed    : in  std_logic;
       newseed   : in  std_logic_vector(31 downto 0);
-      out_ready : out std_logic;
+      out_ready : in  std_logic;
       out_valid : out std_logic;
       out_data  : out std_logic_vector(31 downto 0)
     );
@@ -2263,7 +2247,7 @@ end neorv32_package;
 
 package body neorv32_package is
 
-  -- Function: Minimal required number of bits to represent <input> numbers -----------------     --TODO: This is a log2ceil funciton, doesn't calculate correct bits for input of 0 or 1
+  -- Function: Minimal required number of bits to represent <input> numbers -----------------     --TODO: This is a log2ceil function, doesn't calculate correct bits for input of 1
   -- -------------------------------------------------------------------------------------------
   function index_size_f(input : natural) return natural is
   begin
@@ -2279,16 +2263,12 @@ package body neorv32_package is
   -- -------------------------------------------------------------------------------------------
   function num_bits_f(input : natural) return natural is
   begin
-    if (input = 0) then
-      return 0;
-    else
-      for i in 1 to natural'high loop
-        if (2**i > input) then
-          return i;
-        end if;
-      end loop; -- i
-    end if;
-    return 0;
+    for i in 1 to natural'high loop
+      if (2**i > input) then
+        return i;
+      end if;
+    end loop; -- i
+    return 1;
   end function num_bits_f;
 
   -- Function: Conditional select natural ---------------------------------------------------
