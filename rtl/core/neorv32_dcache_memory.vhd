@@ -384,6 +384,7 @@ begin
       variable low_ptr_idx  : integer := 0;
       variable high_ptr_idx : integer := ASSOCIATIVITY - 1;
       variable curr_ptr_idx : integer := (high_ptr_idx - low_ptr_idx) / 2;
+      variable ptr_idx_offset : integer := 0;
       
       -- keep track of index for each root in plru tree
       variable curr_root_idx : integer := 0;
@@ -400,9 +401,10 @@ begin
       for i in 0 to block_precision_c - 1 loop
         offset := (2 ** (i + 1)) - 1; -- offset for next level of tree
         if current_tree(curr_root_idx) = '0' then
+          ptr_idx_offset := 0;
           current_tree(curr_root_idx) := not current_tree(curr_root_idx);
           if (high_ptr_idx - low_ptr_idx) = 1 then -- last iteration
-            curr_ptr_idx := curr_ptr_idx + 1;
+            curr_ptr_idx := curr_ptr_idx + ptr_idx_offset;
           else 
             -- update block reference indices
             high_ptr_idx := curr_ptr_idx;
@@ -416,8 +418,10 @@ begin
             end if;
           end if;
         else  -- current_tree(curr_root_idx) = '1'
+          ptr_idx_offset := 1;
           current_tree(curr_root_idx) := not current_tree(curr_root_idx);
           if (high_ptr_idx - low_ptr_idx) = 1 then
+            curr_ptr_idx := curr_ptr_idx + ptr_idx_offset;
           else
             -- update block reference indices
             low_ptr_idx  := curr_ptr_idx + 1;
