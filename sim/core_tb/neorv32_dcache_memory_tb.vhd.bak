@@ -54,7 +54,7 @@ entity tb_neorv32_dcache_memory is
     DCACHE_NUM_BLOCKS  : natural := 64;       -- number of blocks (min 1), has to be a power of 2
     DCACHE_BLOCK_SIZE  : natural := 8;        -- block size in bytes (min 4), has to be a power of 2
     ASSOCIATIVITY      : natural := 2;        -- associativity; 2**(n-1)-way 1=direct-mapped, 2=2-way set-associative, 3=4-way set associative
-    DCACHE_REPLACE_POL : natural := 4;        -- cache replacement policy; 1=LRU, 2=Pseudo-LRU, 3=FIFO, 4=Random
+    DCACHE_REPLACE_POL : natural := 2;        -- cache replacement policy; 1=LRU, 2=Pseudo-LRU, 3=FIFO, 4=Random
     SELF_TERM          : boolean := true      -- When true the testbench will stop running if pass/fail has been determined
   );
 end tb_neorv32_dcache_memory;
