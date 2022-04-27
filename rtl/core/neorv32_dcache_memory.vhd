@@ -393,7 +393,7 @@ begin
       
       -- for 2-way
       if (block_precision_c - 1) <= 0 then
-        history.plru_way(to_integer(unsigned(cache_index))) <= not history.plru_way(to_integer(unsigned(cache_index)));
+        history.plru_way(to_integer(cache_index)) <= not history.plru_way(to_integer(cache_index));
         return 1;  
       end if;
       
@@ -438,8 +438,8 @@ begin
       end loop; -- i
       
 
-      plru_trees(to_integer(unsigned(cache_index)))       <= current_tree; 
-      history.plru_way(to_integer(unsigned(cache_index))) <= to_unsigned(curr_ptr_idx, block_precision_c);
+      plru_trees(to_integer(cache_index))       <= current_tree; 
+      history.plru_way(to_integer(cache_index)) <= to_unsigned(curr_ptr_idx, block_precision_c);
       
       return 1; 
       end function plru_replacement;
@@ -459,7 +459,7 @@ begin
     end process plru_access_history;
 
     -- select the line that is going to be replaced
-    way_select(to_integer(unsigned(cache_index))) <= (others => '0') when (ASSOCIATIVITY = 1) else history.to_be_replaced(to_integer(unsigned(cache_index)));
+    way_select(to_integer(cache_index)) <= (others => '0') when (ASSOCIATIVITY = 1) else history.to_be_replaced(to_integer(cache_index));
   end generate;
 
 	-- FIFO Cache Access History -------------------------------------------------------------------
