@@ -166,7 +166,8 @@ architecture neorv32_dcache_memory_rtl of neorv32_dcache_memory is
   signal age : lru_sets := (others => (others => (others => '0')));
   
   -- PLRU signals
-  signal plru_path : unsigned(block_precision_c-1 downto 0) := (others => '0');
+  type plru_tree_sets_t is array (0 to cache_index_size_c-1) of std_ulogic_vector(2 downto 0);
+  signal plru_trees : plru_tree_sets_t := (others => (others => '0'));
   signal plru_nat  : natural;
 
   function maxindex(a : lru_blks) return integer is
@@ -370,77 +371,96 @@ begin
   end generate;
   
   
-  -- PLRU Cache Access History -------------------------------------------------------------------
+-- PLRU Cache Access History -------------------------------------------------------------------
   -- -------------------------------------------------------------------------------------------
---  DCACHE_PLRU_INST : if (DCACHE_REPLACE_POL = 2) generate
---    plru_access_history: process(clk_i) is
---    
---    -- Tree-PLRU algorithm to determine block to select
---    -- low_idx : index of lowest 'half' of plru bits
---    -- high_idx: index of highest 'half' of plru bits
---    -- mid_idx: index of the current root being observed
---    -- level: which level of the 'tree' the algorithm is currently on
---    impure function plru_replacement(low_idx: natural;
---                                    high_idx: natural;
---                                    mid_idx: natural; 
---                                    level: natural) return natural is
---      -- see NOTE below: may not want to instantiate this and instead set it on the first iteration of the function
---      variable prev_acc_loc: integer := to_integer(plru_path); -- PLRU comparison value
---
---      -- using the constant block_precision_c instead (they share the same value)
---      -- variable max_level: natural := index_to_f(ASSOCIATIVITY);   
---    begin
---      -- base case where the max iteration has been passed => stop algorithm
---      if level > block_precision_c then  
---        return 1;
---      end if;
---
---      -- NOTE: Not sure if prev_acc_loc will re-instantiate on each call of the function
---      -- This may be a problem since the function is recursive
---
---      -- if level = 1 then
---      --   prev_acc_loc = to_integer(plru_path);
---      -- end if;
---
---      if mid_idx < prev_acc_loc then -- call algorithm on the lower half, update current bit to '0'
---        history.plru_way(mid_idx) <= '0'; 
---        plru_path(level - 1)      <= '1';   -- used for next replacement
---
---        return plru_replacement(low_idx   => low_idx, 
---                                high_idx  => mid_idx, 
---                                mid_idx   => high_idx / 2 + low_idx,
---                                level     => level + 1);
---      elsif mid_idx > prev_acc_loc then -- call algorithm on the upper half, update current bit to '1'
---        history.plru_way(mid_idx) <= '1';
---        plru_path(level - 1)      <= '0';   -- used for next replacement
---
---        return plru_replacement(low_idx   => mid_idx, 
---                                high_idx  => high_idx, 
---                                mid_idx   => high_idx / 2 + low_idx,
---                                level     => level + 1);
---
---      end if;
---
---      return 1;   -- stop algorithm if no conditions are met
---      end function plru_replacement;
---
---    begin
---      if rising_edge(clk_i) then
---        history.re_ff <= host_re_i;
---        if (invalidate_i = '1') then -- invalidate whole cache
---          history.plru_way <= (others => '1');
---        elsif (history.re_ff = '1') and (or_reduce_f(hit) = '1') and (ctrl_en_i = '0') then -- do plru on hit
---          -- NOTE: this function updates the history.plru_way signal
---          plru_nat <= plru_replacement(low_idx => 0, 
---                                       high_idx => ASSOCIATIVITY-1, 
---                                       mid_idx  => (ASSOCIATIVITY-1) / 2, 
---                                       level    => 1
---          ); 
---        end if;
---        history.to_be_replaced <= history.plru_way;
---      end if;
---    end process plru_access_history;
---  end generate;
+  DCACHE_PLRU_INST : if (DCACHE_REPLACE_POL = 2) generate
+    plru_access_history: process(clk_i) is
+      -- Tree-PLRU algorithm to determine block to select
+    impure function plru_replacement return natural is
+      -- see NOTE below: may not want to instantiate this and instead set it on the first iteration of the function
+      variable current_tree : std_ulogic_vector(2 downto 0) := plru_trees(to_integer(unsigned(cache_index)));
+      
+      -- index references for the blocks/ways
+      variable low_ptr_idx  : integer := 0;
+      variable high_ptr_idx : integer := ASSOCIATIVITY - 1;
+      variable curr_ptr_idx : integer := (high_ptr_idx - low_ptr_idx) / 2;
+      variable ptr_idx_offset : integer := 0;
+      
+      -- keep track of index for each root in plru tree
+      variable curr_root_idx : integer := 0;
+      variable offset        : integer := 0;
+    begin
+      
+      -- for 2-way
+      if (block_precision_c - 1) <= 0 then
+        history.plru_way(to_integer(cache_index)) <= not history.plru_way(to_integer(cache_index));
+        return 1;  
+      end if;
+      
+      -- for n-way
+      for i in 0 to block_precision_c - 1 loop
+        offset := (2 ** (i + 1)) - 1; -- offset for next level of tree
+        if current_tree(curr_root_idx) = '0' then
+          ptr_idx_offset := 0;
+          current_tree(curr_root_idx) := not current_tree(curr_root_idx);
+          if (high_ptr_idx - low_ptr_idx) = 1 then -- last iteration
+            curr_ptr_idx := curr_ptr_idx + ptr_idx_offset;
+          else 
+            -- update block reference indices
+            high_ptr_idx := curr_ptr_idx;
+            curr_ptr_idx := (high_ptr_idx - low_ptr_idx) / 2;
+
+            -- update tree reference index
+            if curr_root_idx = 0 then
+              curr_root_idx := 2;
+            else 
+              curr_root_idx := offset + (2 ** (curr_root_idx - 1)) + 1;
+            end if;
+          end if;
+        else  -- current_tree(curr_root_idx) = '1'
+          ptr_idx_offset := 1;
+          current_tree(curr_root_idx) := not current_tree(curr_root_idx);
+          if (high_ptr_idx - low_ptr_idx) = 1 then
+            curr_ptr_idx := curr_ptr_idx + ptr_idx_offset;
+          else
+            -- update block reference indices
+            low_ptr_idx  := curr_ptr_idx + 1;
+            curr_ptr_idx := (high_ptr_idx - low_ptr_idx) / 2 + low_ptr_idx;
+            
+            -- update tree reference index
+            if curr_root_idx = 0 then
+              curr_root_idx := 1;
+            else
+              curr_root_idx := offset + (2 ** (curr_root_idx - 1));
+            end if;
+          end if;
+        end if;
+      end loop; -- i
+      
+
+      plru_trees(to_integer(cache_index))       <= current_tree; 
+      history.plru_way(to_integer(cache_index)) <= to_unsigned(curr_ptr_idx, block_precision_c);
+      
+      return 1; 
+      end function plru_replacement;
+
+    begin
+      if rising_edge(clk_i) then
+        if (invalidate_i = '1') then -- invalidate whole cache
+          history.plru_way <= (others => (others => '0'));
+        elsif (history.re_ff = '1') and (or_reduce_f(hit) = '1') and (ctrl_en_i = '0') then -- do plru on hit
+          -- NOTE: this function updates the history.plru_way signal
+          plru_nat <= plru_replacement;
+        end if;
+        if(and_reduce_f(std_ulogic_vector(cache_offset)) = '1') then
+          history.to_be_replaced(to_integer(unsigned(cache_index))) <= history.plru_way(to_integer(unsigned(cache_index)));
+        end if;
+      end if;
+    end process plru_access_history;
+
+    -- select the line that is going to be replaced
+    way_select(to_integer(cache_index)) <= (others => '0') when (ASSOCIATIVITY = 1) else history.to_be_replaced(to_integer(cache_index));
+  end generate;
 
 	-- FIFO Cache Access History -------------------------------------------------------------------
   -- -------------------------------------------------------------------------------------------
