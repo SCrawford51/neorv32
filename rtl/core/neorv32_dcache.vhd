@@ -44,9 +44,10 @@ use neorv32.neorv32_package.all;
 
 entity neorv32_dcache is
   generic (
-    DCACHE_NUM_BLOCKS : natural; -- number of blocks (min 1), has to be a power of 2
-    DCACHE_BLOCK_SIZE : natural; -- block size in bytes (min 4), has to be a power of 2
-    DCACHE_NUM_SETS   : natural  -- associativity / number of sets (1=direct_mapped), has to be a power of 2
+    DCACHE_NUM_BLOCKS  :  natural; -- number of blocks (min 1), has to be a power of 2
+    DCACHE_BLOCK_SIZE  :  natural; -- block size in bytes (min 4), has to be a power of 2
+    ASSOCIATIVITY      :  natural; -- associativity / number of sets (1=direct_mapped), has to be a power of 2
+    DCACHE_REPLACE_POL :  natural; -- cache replacement policy; 1=LRU, 2=Pseudo-LRU, 3=FIFO, 4=Random
   );
   port (
     -- global control --
@@ -85,9 +86,10 @@ architecture neorv32_dcache_rtl of neorv32_dcache is
   -- cache memory --
   component neorv32_dcache_memory
   generic (
-    DCACHE_NUM_BLOCKS : natural := 4;  -- number of blocks (min 1), has to be a power of 2
-    DCACHE_BLOCK_SIZE : natural := 16; -- block size in bytes (min 4), has to be a power of 2
-    DCACHE_NUM_SETS   : natural := 1   -- associativity; 0=direct-mapped, 1=2-way set-associative
+    DCACHE_NUM_BLOCKS  : natural := 64; -- number of blocks (min 1), has to be a power of 2
+    DCACHE_BLOCK_SIZE  : natural := 4;  -- block size in bytes (min 4), has to be a power of 2
+    ASSOCIATIVITY      : natural := 1;  -- associativity; 1=direct-mapped, 2=2-way set-associative
+    DCACHE_REPLACE_POL : natural := 1   -- cache replacement policy; 1=LRU, 2=Pseudo-LRU, 3=FIFO, 4=Random
   );
   port (
     -- global control --
@@ -292,9 +294,10 @@ begin
   -- -------------------------------------------------------------------------------------------
   neorv32_dcache_memory_inst: neorv32_dcache_memory
   generic map (
-    DCACHE_NUM_BLOCKS => DCACHE_NUM_BLOCKS, -- number of blocks (min 1), has to be a power of 2
-    DCACHE_BLOCK_SIZE => DCACHE_BLOCK_SIZE, -- block size in bytes (min 4), has to be a power of 2
-    DCACHE_NUM_SETS   => DCACHE_NUM_SETS    -- associativity; 0=direct-mapped, 1=2-way set-associative
+    DCACHE_NUM_BLOCKS  => DCACHE_NUM_BLOCKS, -- number of blocks (min 1), has to be a power of 2
+    DCACHE_BLOCK_SIZE  => DCACHE_BLOCK_SIZE, -- block size in bytes (min 4), has to be a power of 2
+    ASSOCIATIVITY      => ASSOCIATIVITY,     -- associativity; 0=direct-mapped, 1=2-way set-associative
+    DCACHE_REPLACE_POL => DCACHE_REPLACE_POL -- cache replacement policy; 1=LRU, 2=Pseudo-LRU, 3=FIFO, 4=Random
   )
   port map (
     -- global control --
