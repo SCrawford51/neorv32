@@ -47,7 +47,7 @@ entity neorv32_dcache is
     DCACHE_NUM_BLOCKS  :  natural; -- number of blocks (min 1), has to be a power of 2
     DCACHE_BLOCK_SIZE  :  natural; -- block size in bytes (min 4), has to be a power of 2
     ASSOCIATIVITY      :  natural; -- associativity / number of sets (1=direct_mapped), has to be a power of 2
-    DCACHE_REPLACE_POL :  natural; -- cache replacement policy; 1=LRU, 2=Pseudo-LRU, 3=FIFO, 4=Random
+    DCACHE_REPLACE_POL :  natural  -- cache replacement policy; 1=LRU, 2=Pseudo-LRU, 3=FIFO, 4=Random
   );
   port (
     -- global control --
