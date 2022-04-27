@@ -150,11 +150,11 @@ begin
   -- configuration --
   assert not (is_power_of_two_f(DCACHE_NUM_BLOCKS) = false) report "NEORV32 PROCESSOR CONFIG ERROR! d-cache number of blocks <DCACHE_NUM_BLOCKS> has to be a power of 2." severity error;
   assert not (is_power_of_two_f(DCACHE_BLOCK_SIZE) = false) report "NEORV32 PROCESSOR CONFIG ERROR! d-cache block size <DCACHE_BLOCK_SIZE> has to be a power of 2." severity error;
-  assert not ((is_power_of_two_f(DCACHE_NUM_SETS) = false)) report "NEORV32 PROCESSOR CONFIG ERROR! d-cache associativity <DCACHE_NUM_SETS> has to be a power of 2." severity error;
+  assert not ((is_power_of_two_f(ASSOCIATIVITY) = false)) report "NEORV32 PROCESSOR CONFIG ERROR! d-cache associativity <ASSOCIATIVITY> has to be a power of 2." severity error;
   assert not (DCACHE_NUM_BLOCKS < 1) report "NEORV32 PROCESSOR CONFIG ERROR! d-cache number of blocks <DCACHE_NUM_BLOCKS> has to be >= 1." severity error;
   assert not (DCACHE_BLOCK_SIZE < 4) report "NEORV32 PROCESSOR CONFIG ERROR! d-cache block size <DCACHE_BLOCK_SIZE> has to be >= 4." severity error;
   --TODO: Once we can handle 2**n way associative, remove this next assertion.
-  assert not ((DCACHE_NUM_SETS = 0) or (DCACHE_NUM_SETS > 2)) report "NEORV32 PROCESSOR CONFIG ERROR! d-cache associativity <DCACHE_NUM_SETS> has to be 1 (direct-mapped) or 2 (2-way set-associative)." severity error;
+  assert not ((ASSOCIATIVITY = 0) or (ASSOCIATIVITY > 2)) report "NEORV32 PROCESSOR CONFIG ERROR! d-cache associativity <ASSOCIATIVITY> has to be 1 (direct-mapped) or 2 (2-way set-associative)." severity error;
 
   -- Control Engine FSM Sync ----------------------------------------------------------------
   -- -------------------------------------------------------------------------------------------
