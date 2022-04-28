@@ -214,6 +214,7 @@ begin
     DCACHE_NUM_BLOCKS            => 8,             -- d-cache: number of blocks (min 2), has to be a power of 2
     DCACHE_BLOCK_SIZE            => 64,            -- d-cache: block size in bytes (min 4), has to be a power of 2
     DCACHE_ASSOCIATIVITY         => 2,             -- d-cache: associativity / number of sets (1=direct_mapped), has to be a power of 2
+    DCACHE_REPLACE_POL           => 3,             -- cache replacement policy; 1=LRU, 2=Pseudo-LRU, 3=FIFO, 4=Random
     -- External memory interface --
     MEM_EXT_EN                   => true,          -- implement external memory bus interface?
     MEM_EXT_TIMEOUT              => 256,           -- cycles after a pending bus access auto-terminates (0 = disabled)
