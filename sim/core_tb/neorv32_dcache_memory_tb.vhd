@@ -41,6 +41,7 @@
 
 library ieee;
 use ieee.std_logic_1164.all;
+use ieee.std_logic_unsigned.all;
 use ieee.numeric_std.all;
 use ieee.math_real.all;
 
@@ -72,6 +73,14 @@ architecture tb_neorv32_dcache_memory_rtl of tb_neorv32_dcache_memory is
   constant self_term_c         : time                                        := 1 ms;
   constant max_cycles_c        : natural                                     := self_term_c / t_clock_c;
   constant rand_setup_cycles_c : natural                                     := 4*624;
+
+  -- read count
+  constant max_num_reads       : natural                                     := 1_000_000;
+  
+  -- counters
+  type counter is array (ASSOCIATIVITY-1 downto 0) of natural;
+  signal hit_count             : counter                                     := (others => 0);
+  signal read_count            : counter                                     := (others => 0);
 
   -- generators --
   signal run_tb                : std_ulogic                                  := '1';
@@ -107,8 +116,16 @@ architecture tb_neorv32_dcache_memory_rtl of tb_neorv32_dcache_memory is
   signal tb_error              : std_ulogic                                  := '0';
   signal tb_finished           : std_ulogic                                  := '0';
   
-begin
+  impure function rand_int(min_val, max_val : integer) return integer is
+    variable r : real;
+    variable seed1, seed2 : integer := 999;
+  begin
+    uniform(seed1, seed2, r);
+    return integer(
+      round(r * real(max_val - min_val + 1) + real(min_val) - 0.5));
+  end function;
 
+begin
   -- Clock/Reset Generator ---------------------------------------------------------------------
   -- -------------------------------------------------------------------------------------------
   clk_gen <= not clk_gen after (t_clock_c/2) when run_tb = '1' else '0';
@@ -150,6 +167,7 @@ begin
     variable write_num   : natural := 0;
     variable offset_addr : natural := 0;
     variable init_read   : boolean := true;
+    variable data_mem_addr    : integer := 0;
   begin
     if DCACHE_REPLACE_POL = 4 and init_rand then
       wait for rand_setup_cycles_c*t_clock_c;
@@ -284,7 +302,7 @@ begin
 
       wait until rising_edge(clk_gen);
       data_read_err     <= not(or_reduce_f(hit));
-
+      
       wait for 2*t_clock_c;
       wait until rising_edge(clk_gen);
       tb_finished       <= '1';
@@ -297,18 +315,18 @@ begin
   -- -------------------------------------------------------------------------------------------
   -- Generate loop allows testing all associativity options at once
   n_way_assoc_mem : for n in 0 to ASSOCIATIVITY-1 generate --actually (2^n)-way associative memory
-    neorv32_dcache_memory_inst_x: neorv32_dcache_memory
-    generic map (
-      DCACHE_NUM_BLOCKS  => DCACHE_NUM_BLOCKS,      -- number of blocks (min 1), has to be a power of 2
-      DCACHE_BLOCK_SIZE  => DCACHE_BLOCK_SIZE,      -- block size in bytes (min 4), has to be a power of 2
-      ASSOCIATIVITY      => 2**n,                   -- associativity; 0=direct-mapped, 1=2-way set-associative
+  neorv32_dcache_memory_inst_x: neorv32_dcache_memory
+  generic map (
+    DCACHE_NUM_BLOCKS  => DCACHE_NUM_BLOCKS,      -- number of blocks (min 1), has to be a power of 2
+    DCACHE_BLOCK_SIZE  => DCACHE_BLOCK_SIZE,      -- block size in bytes (min 4), has to be a power of 2
+    ASSOCIATIVITY      => 2**n,                   -- associativity; 0=direct-mapped, 1=2-way set-associative
       DCACHE_REPLACE_POL => DCACHE_REPLACE_POL      -- cache replacement policy; 1=LRU, 2=Pseudo-LRU, 3=FIFO, 4=Random
-    )
-    port map (
-      -- global control --
-      clk_i          => clk_gen,                    -- global clock, rising edge
-      invalidate_i   => rst_gen,                    -- invalidate whole cache
-      -- host cache access (read-only) --
+      )
+      port map (
+        -- global control --
+        clk_i          => clk_gen,                    -- global clock, rising edge
+        invalidate_i   => rst_gen,                    -- invalidate whole cache
+        -- host cache access (read-only) --
       host_addr_i    => host_addr,                  -- access address
       host_re_i      => host_re,                    -- read enable
       host_rdata_o   => host_rdata(n),              -- read data
@@ -322,7 +340,33 @@ begin
       ctrl_tag_we_i  => ctrl_tag_we,                -- write tag to selected block
       ctrl_valid_i   => ctrl_valid_we,              -- make selected block valid
       ctrl_invalid_i => ctrl_invalid_we             -- make selected block invalid
-    );
-  end generate;
+      );
 
+  -- count the hits
+  hit_counter : process(clk_gen)
+  begin
+    if (hit(n) = '1') then
+      hit_count(n) <= hit_count(n) + 1;
+    end if;
+  end process hit_counter;
+  
+  -- count the number of attempted reads
+  read_counter : process(clk_gen)
+  begin
+    if host_re = '1' then
+      read_count(n) <= read_count(n) + 1;
+    end if;
+  end process read_counter;
+  
+  -- report number of hits and number of reads for each associativity
+  report_rates : process (tb_finished)
+  begin
+    if (tb_finished = '1') then
+      report lf & integer'image(2**n) & "-way HITS: " & integer'image(hit_count(n)) & lf &
+                  integer'image(2**n) & "-way READS: " & integer'image(read_count(n)) & lf;
+    end if;  
+  end process report_rates;
+
+  end generate;
 end tb_neorv32_dcache_memory_rtl;
+      
