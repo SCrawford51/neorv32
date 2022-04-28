@@ -98,9 +98,10 @@ entity neorv32_top is
     
     -- Internal Data Cache (dCACHE) --
     DCACHE_EN                    : boolean := false;  -- implement data cache
-    DCACHE_NUM_BLOCKS            : natural := 4;      -- i-cache: number of blocks (min 1), has to be a power of 2
-    DCACHE_BLOCK_SIZE            : natural := 64;     -- i-cache: block size in bytes (min 4), has to be a power of 2
-    DCACHE_ASSOCIATIVITY         : natural := 1;      -- i-cache: associativity / number of sets (1=direct_mapped), has to be a power of 2
+    DCACHE_NUM_BLOCKS            : natural := 4;      -- d-cache: number of blocks (min 1), has to be a power of 2
+    DCACHE_BLOCK_SIZE            : natural := 64;     -- d-cache: block size in bytes (min 4), has to be a power of 2
+    DCACHE_ASSOCIATIVITY         : natural := 1;      -- d-cache: associativity / number of sets (1=direct_mapped), has to be a power of 2
+    DCACHE_REPLACE_POL           : natural := 3;      -- d-cache: replacement policy; 1=LRU, 2=Pseudo-LRU, 3=FIFO, 4=Random
 
     -- External memory interface (WISHBONE) --
     MEM_EXT_EN                   : boolean := false;  -- implement external memory bus interface?
@@ -636,9 +637,10 @@ begin
   if (DCACHE_EN = true) generate
     neorv32_dcache_inst: neorv32_dcache
     generic map (
-      DCACHE_NUM_BLOCKS => DCACHE_NUM_BLOCKS,   -- number of blocks (min 2), has to be a power of 2
-      DCACHE_BLOCK_SIZE => DCACHE_BLOCK_SIZE,   -- block size in bytes (min 4), has to be a power of 2
-      DCACHE_NUM_SETS   => DCACHE_ASSOCIATIVITY -- associativity / number of sets (1=direct_mapped), has to be a power of 2
+      DCACHE_NUM_BLOCKS  => DCACHE_NUM_BLOCKS,    -- number of blocks (min 2), has to be a power of 2
+      DCACHE_BLOCK_SIZE  => DCACHE_BLOCK_SIZE,    -- block size in bytes (min 4), has to be a power of 2
+      ASSOCIATIVITY      => DCACHE_ASSOCIATIVITY, -- associativity / number of sets (1=direct_mapped), has to be a power of 2
+      DCACHE_REPLACE_POL => DCACHE_REPLACE_POL    -- cache replacement policy; 1=LRU, 2=Pseudo-LRU, 3=FIFO, 4=Random
     )
     port map (
       -- global control --
@@ -1563,6 +1565,7 @@ begin
     DCACHE_NUM_BLOCKS    => DCACHE_NUM_BLOCKS,    -- d-cache: number of blocks (min 2), has to be a power of 2
     DCACHE_BLOCK_SIZE    => DCACHE_BLOCK_SIZE,    -- d-cache: block size in bytes (min 4), has to be a power of 2
     DCACHE_ASSOCIATIVITY => DCACHE_ASSOCIATIVITY, -- d-cache: associativity (min 1), has to be a power 2
+    DCACHE_REPLACE_POL   => DCACHE_REPLACE_POL,   -- cache replacement policy; 1=LRU, 2=Pseudo-LRU, 3=FIFO, 4=Random
     -- External memory interface --
     MEM_EXT_EN           => MEM_EXT_EN,           -- implement external memory bus interface?
     MEM_EXT_BIG_ENDIAN   => MEM_EXT_BIG_ENDIAN,   -- byte order: true=big-endian, false=little-endian

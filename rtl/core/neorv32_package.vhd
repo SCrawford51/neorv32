@@ -982,6 +982,12 @@ package neorv32_package is
       ICACHE_NUM_BLOCKS            : natural := 4;      -- i-cache: number of blocks (min 1), has to be a power of 2
       ICACHE_BLOCK_SIZE            : natural := 64;     -- i-cache: block size in bytes (min 4), has to be a power of 2
       ICACHE_ASSOCIATIVITY         : natural := 1;      -- i-cache: associativity / number of sets (1=direct_mapped), has to be a power of 2
+      -- Internal Data Cache (dCACHE) --
+      DCACHE_EN                    : boolean := false;  -- implement data cache
+      DCACHE_NUM_BLOCKS            : natural := 4;      -- d-cache: number of blocks (min 1), has to be a power of 2
+      DCACHE_BLOCK_SIZE            : natural := 64;     -- d-cache: block size in bytes (min 4), has to be a power of 2
+      DCACHE_ASSOCIATIVITY         : natural := 1;      -- d-cache: associativity / number of sets (1=direct_mapped), has to be a power of 2
+      DCACHE_REPLACE_POL           : natural := 3;      -- d-cache: replacement policy; 1=LRU, 2=Pseudo-LRU, 3=FIFO, 4=Random
       -- External memory interface (WISHBONE) --
       MEM_EXT_EN                   : boolean := false;  -- implement external memory bus interface?
       MEM_EXT_TIMEOUT              : natural := 255;    -- cycles after a pending bus access auto-terminates (0 = disabled)
@@ -1509,9 +1515,10 @@ package neorv32_package is
   -- -------------------------------------------------------------------------------------------
   component neorv32_dcache
     generic (
-      DCACHE_NUM_BLOCKS : natural; -- number of blocks (min 1), has to be a power of 2
-      DCACHE_BLOCK_SIZE : natural; -- block size in bytes (min 4), has to be a power of 2
-      ASSOCIATIVITY     : natural  -- associativity / number of sets (1=direct_mapped), has to be a power of 2
+      DCACHE_NUM_BLOCKS  : natural := 4;  -- number of blocks (min 1), has to be a power of 2
+      DCACHE_BLOCK_SIZE  : natural := 16; -- block size in bytes (min 4), has to be a power of 2
+      ASSOCIATIVITY      : natural := 1;  -- associativity; 1=direct-mapped, 2=2-way set-associative
+      DCACHE_REPLACE_POL : natural := 1   -- cache replacement policy; 1=LRU, 2=Pseudo-LRU, 3=FIFO, 4=Random
     );
     port (
       -- global control --
@@ -2102,6 +2109,11 @@ package neorv32_package is
       ICACHE_NUM_BLOCKS    : natural; -- i-cache: number of blocks (min 2), has to be a power of 2
       ICACHE_BLOCK_SIZE    : natural; -- i-cache: block size in bytes (min 4), has to be a power of 2
       ICACHE_ASSOCIATIVITY : natural; -- i-cache: associativity (min 1), has to be a power 2
+      DCACHE_EN            : boolean; -- implement instruction cache
+      DCACHE_NUM_BLOCKS    : natural; -- d-cache: number of blocks (min 2), has to be a power of 2
+      DCACHE_BLOCK_SIZE    : natural; -- d-cache: block size in bytes (min 4), has to be a power of 2
+      DCACHE_ASSOCIATIVITY : natural; -- d-cache: associativity (min 1), has to be a power 2
+      DCACHE_REPLACE_POL   : natural; -- cache replacement policy; 1=LRU, 2=Pseudo-LRU, 3=FIFO, 4=Random
       -- External memory interface --
       MEM_EXT_EN           : boolean; -- implement external memory bus interface?
       MEM_EXT_BIG_ENDIAN   : boolean; -- byte order: true=big-endian, false=little-endian
