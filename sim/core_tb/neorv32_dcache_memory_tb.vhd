@@ -303,6 +303,8 @@ begin
       wait until rising_edge(clk_gen);
       data_read_err     <= not(or_reduce_f(hit));
       
+      -- TODO: Perform reads on random address using rand_int() and max_num_reads
+
       wait for 2*t_clock_c;
       wait until rising_edge(clk_gen);
       tb_finished       <= '1';
