@@ -1,8 +1,8 @@
 -- #################################################################################################
--- # << NEORV32 - Processor-Internal Data Cache >>                                          #
+-- # << NEORV32 - Processor-Internal Data Cache >>                                                 #
 -- # ********************************************************************************************* #
--- # Direct mapped (DCACHE_NUM_SETS = 1) or 2-way set-associative (DCACHE_NUM_SETS = 2).           #
--- # Least recently used replacement policy (if DCACHE_NUM_SETS > 1).                              #
+-- # Direct mapped (CACHE_NUM_SETS = 1) or 2-way set-associative (CACHE_NUM_SETS = 2).             #
+-- # Least recently used replacement policy (if CACHE_NUM_SETS > 1).                               #
 -- # ********************************************************************************************* #
 -- # BSD 3-Clause License                                                                          #
 -- #                                                                                               #
@@ -42,12 +42,12 @@ use ieee.numeric_std.all;
 library neorv32;
 use neorv32.neorv32_package.all;
 
-entity neorv32_dcache is
+entity neorv32_cache is
   generic (
-    DCACHE_NUM_BLOCKS  :  natural; -- number of blocks (min 1), has to be a power of 2
-    DCACHE_BLOCK_SIZE  :  natural; -- block size in bytes (min 4), has to be a power of 2
+    CACHE_NUM_BLOCKS  :  natural; -- number of blocks (min 1), has to be a power of 2
+    CACHE_BLOCK_SIZE  :  natural; -- block size in bytes (min 4), has to be a power of 2
     ASSOCIATIVITY      :  natural; -- associativity / number of sets (1=direct_mapped), has to be a power of 2
-    DCACHE_REPLACE_POL :  natural  -- cache replacement policy; 1=LRU, 2=Pseudo-LRU, 3=FIFO, 4=Random
+    CACHE_REPLACE_POL :  natural  -- cache replacement policy; 1=LRU, 2=Pseudo-LRU, 3=FIFO, 4=Random
   );
   port (
     -- global control --
@@ -74,22 +74,22 @@ entity neorv32_dcache is
     bus_ack_i    : in  std_ulogic; -- bus transfer acknowledge
     bus_err_i    : in  std_ulogic  -- bus transfer error
   );
-end neorv32_dcache;
+end neorv32_cache;
 
-architecture neorv32_dcache_rtl of neorv32_dcache is
+architecture neorv32_cache_rtl of neorv32_cache is
 
   -- cache layout --
-  constant cache_offset_size_c : natural := index_size_f(DCACHE_BLOCK_SIZE/4); -- offset addresses full 32-bit words
-  constant cache_index_size_c  : natural := index_size_f(DCACHE_NUM_BLOCKS);
+  constant cache_offset_size_c : natural := index_size_f(CACHE_BLOCK_SIZE/4); -- offset addresses full 32-bit words
+  constant cache_index_size_c  : natural := index_size_f(CACHE_NUM_BLOCKS);
   constant cache_tag_size_c    : natural := 32 - (cache_offset_size_c + cache_index_size_c + 2); -- 2 additonal bits for byte offset
 
   -- cache memory --
-  component neorv32_dcache_memory
+  component neorv32_cache_memory
   generic (
-    DCACHE_NUM_BLOCKS  : natural := 64; -- number of blocks (min 1), has to be a power of 2
-    DCACHE_BLOCK_SIZE  : natural := 4;  -- block size in bytes (min 4), has to be a power of 2
+    CACHE_NUM_BLOCKS  : natural := 64; -- number of blocks (min 1), has to be a power of 2
+    CACHE_BLOCK_SIZE  : natural := 4;  -- block size in bytes (min 4), has to be a power of 2
     ASSOCIATIVITY      : natural := 1;  -- associativity; 1=direct-mapped, 2=2-way set-associative
-    DCACHE_REPLACE_POL : natural := 1   -- cache replacement policy; 1=LRU, 2=Pseudo-LRU, 3=FIFO, 4=Random
+    CACHE_REPLACE_POL : natural := 1   -- cache replacement policy; 1=LRU, 2=Pseudo-LRU, 3=FIFO, 4=Random
   );
   port (
     -- global control --
@@ -148,13 +148,11 @@ begin
   -- Sanity Checks --------------------------------------------------------------------------
   -- -------------------------------------------------------------------------------------------
   -- configuration --
-  assert not (is_power_of_two_f(DCACHE_NUM_BLOCKS) = false) report "NEORV32 PROCESSOR CONFIG ERROR! d-cache number of blocks <DCACHE_NUM_BLOCKS> has to be a power of 2." severity error;
-  assert not (is_power_of_two_f(DCACHE_BLOCK_SIZE) = false) report "NEORV32 PROCESSOR CONFIG ERROR! d-cache block size <DCACHE_BLOCK_SIZE> has to be a power of 2." severity error;
+  assert not (is_power_of_two_f(CACHE_NUM_BLOCKS) = false) report "NEORV32 PROCESSOR CONFIG ERROR! d-cache number of blocks <CACHE_NUM_BLOCKS> has to be a power of 2." severity error;
+  assert not (is_power_of_two_f(CACHE_BLOCK_SIZE) = false) report "NEORV32 PROCESSOR CONFIG ERROR! d-cache block size <CACHE_BLOCK_SIZE> has to be a power of 2." severity error;
   assert not ((is_power_of_two_f(ASSOCIATIVITY) = false)) report "NEORV32 PROCESSOR CONFIG ERROR! d-cache associativity <ASSOCIATIVITY> has to be a power of 2." severity error;
-  assert not (DCACHE_NUM_BLOCKS < 1) report "NEORV32 PROCESSOR CONFIG ERROR! d-cache number of blocks <DCACHE_NUM_BLOCKS> has to be >= 1." severity error;
-  assert not (DCACHE_BLOCK_SIZE < 4) report "NEORV32 PROCESSOR CONFIG ERROR! d-cache block size <DCACHE_BLOCK_SIZE> has to be >= 4." severity error;
-  --TODO: Once we can handle 2**n way associative, remove this next assertion.
-  assert not ((ASSOCIATIVITY = 0) or (ASSOCIATIVITY > 2)) report "NEORV32 PROCESSOR CONFIG ERROR! d-cache associativity <ASSOCIATIVITY> has to be 1 (direct-mapped) or 2 (2-way set-associative)." severity error;
+  assert not (CACHE_NUM_BLOCKS < 1) report "NEORV32 PROCESSOR CONFIG ERROR! d-cache number of blocks <CACHE_NUM_BLOCKS> has to be >= 1." severity error;
+  assert not (CACHE_BLOCK_SIZE < 4) report "NEORV32 PROCESSOR CONFIG ERROR! d-cache block size <CACHE_BLOCK_SIZE> has to be >= 4." severity error;
 
   -- Control Engine FSM Sync ----------------------------------------------------------------
   -- -------------------------------------------------------------------------------------------
@@ -292,12 +290,12 @@ begin
 
   -- Cache Memory ---------------------------------------------------------------------------
   -- -------------------------------------------------------------------------------------------
-  neorv32_dcache_memory_inst: neorv32_dcache_memory
+  neorv32_cache_memory_inst: neorv32_cache_memory
   generic map (
-    DCACHE_NUM_BLOCKS  => DCACHE_NUM_BLOCKS, -- number of blocks (min 1), has to be a power of 2
-    DCACHE_BLOCK_SIZE  => DCACHE_BLOCK_SIZE, -- block size in bytes (min 4), has to be a power of 2
-    ASSOCIATIVITY      => ASSOCIATIVITY,     -- associativity; 0=direct-mapped, 1=2-way set-associative
-    DCACHE_REPLACE_POL => DCACHE_REPLACE_POL -- cache replacement policy; 1=LRU, 2=Pseudo-LRU, 3=FIFO, 4=Random
+    CACHE_NUM_BLOCKS  => CACHE_NUM_BLOCKS, -- number of blocks (min 1), has to be a power of 2
+    CACHE_BLOCK_SIZE  => CACHE_BLOCK_SIZE, -- block size in bytes (min 4), has to be a power of 2
+    ASSOCIATIVITY     => ASSOCIATIVITY,     -- associativity; 0=direct-mapped, 1=2-way set-associative
+    CACHE_REPLACE_POL => CACHE_REPLACE_POL -- cache replacement policy; 1=LRU, 2=Pseudo-LRU, 3=FIFO, 4=Random
   )
   port map (
     -- global control --
@@ -319,4 +317,4 @@ begin
     ctrl_invalid_i => cache.ctrl_invalid_we -- make selected block invalid
   );
 
-end neorv32_dcache_rtl;
+end neorv32_cache_rtl;

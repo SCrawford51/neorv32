@@ -60,11 +60,12 @@ entity neorv32_sysinfo is
     ICACHE_NUM_BLOCKS    : natural; -- i-cache: number of blocks (min 2), has to be a power of 2
     ICACHE_BLOCK_SIZE    : natural; -- i-cache: block size in bytes (min 4), has to be a power of 2
     ICACHE_ASSOCIATIVITY : natural; -- i-cache: associativity (min 1), has to be a power 2
+    ICACHE_REPLACE_POL   : natural; -- i-cache replacement policy; 1=LRU, 2=Pseudo-LRU, 3=FIFO, 4=Random
     DCACHE_EN            : boolean; -- implement instruction cache
     DCACHE_NUM_BLOCKS    : natural; -- d-cache: number of blocks (min 2), has to be a power of 2
     DCACHE_BLOCK_SIZE    : natural; -- d-cache: block size in bytes (min 4), has to be a power of 2
     DCACHE_ASSOCIATIVITY : natural; -- d-cache: associativity (min 1), has to be a power 2
-    DCACHE_REPLACE_POL   : natural; -- cache replacement policy; 1=LRU, 2=Pseudo-LRU, 3=FIFO, 4=Random
+    DCACHE_REPLACE_POL   : natural; -- d-cache replacement policy; 1=LRU, 2=Pseudo-LRU, 3=FIFO, 4=Random
     -- External memory interface --
     MEM_EXT_EN           : boolean; -- implement external memory bus interface?
     MEM_EXT_BIG_ENDIAN   : boolean; -- byte order: true=big-endian, false=little-endian
@@ -170,15 +171,15 @@ begin
   sysinfo_mem(2)(31) <= '0'; -- reserved
 
   -- SYSINFO(3): Cache configuration --
-  sysinfo_mem(3)(03 downto 00) <= std_ulogic_vector(to_unsigned(index_size_f(ICACHE_BLOCK_SIZE),    4)) when (ICACHE_EN = true) else (others => '0'); -- i-cache: log2(block_size_in_bytes)
-  sysinfo_mem(3)(07 downto 04) <= std_ulogic_vector(to_unsigned(index_size_f(ICACHE_NUM_BLOCKS),    4)) when (ICACHE_EN = true) else (others => '0'); -- i-cache: log2(number_of_block)
-  sysinfo_mem(3)(11 downto 08) <= std_ulogic_vector(to_unsigned(index_size_f(ICACHE_ASSOCIATIVITY), 4)) when (ICACHE_EN = true) else (others => '0'); -- i-cache: log2(associativity)
-  sysinfo_mem(3)(15 downto 12) <= "0001" when (ICACHE_ASSOCIATIVITY > 1) and (ICACHE_EN = true) else (others => '0'); -- i-cache: replacement strategy (LRU only (yet))
+  sysinfo_mem(3)(03 downto 00) <= std_ulogic_vector(to_unsigned(index_size_f(ICACHE_BLOCK_SIZE),    4)) when (ICACHE_EN = true) else (others => '0');                -- i-cache: log2(block_size_in_bytes)
+  sysinfo_mem(3)(07 downto 04) <= std_ulogic_vector(to_unsigned(index_size_f(ICACHE_NUM_BLOCKS),    4)) when (ICACHE_EN = true) else (others => '0');                -- i-cache: log2(number_of_block)
+  sysinfo_mem(3)(11 downto 08) <= std_ulogic_vector(to_unsigned(index_size_f(ICACHE_ASSOCIATIVITY), 4)) when (ICACHE_EN = true) else (others => '0');                -- i-cache: log2(associativity)
+  sysinfo_mem(3)(15 downto 12) <= std_ulogic_vector(to_unsigned(ICACHE_REPLACE_POL, 4)) when (DCACHE_ASSOCIATIVITY > 1) and (DCACHE_EN = true) else (others => '0'); -- d-cache: replacement strategy
   --
-  sysinfo_mem(3)(19 downto 16) <= std_ulogic_vector(to_unsigned(index_size_f(DCACHE_BLOCK_SIZE),    4)) when (DCACHE_EN = true) else (others => '0'); -- reserved - d-cache: log2(block_size)
-  sysinfo_mem(3)(23 downto 20) <= std_ulogic_vector(to_unsigned(index_size_f(DCACHE_NUM_BLOCKS),    4)) when (DCACHE_EN = true) else (others => '0'); -- reserved - d-cache: log2(num_blocks)
-  sysinfo_mem(3)(27 downto 24) <= std_ulogic_vector(to_unsigned(index_size_f(DCACHE_ASSOCIATIVITY), 4)) when (DCACHE_EN = true) else (others => '0'); -- reserved - d-cache: log2(associativity)
-  sysinfo_mem(3)(31 downto 28) <= std_ulogic_vector(to_unsigned(index_size_f(DCACHE_REPLACE_POL),   4)) when (DCACHE_ASSOCIATIVITY > 1) and (DCACHE_EN = true) else (others => '0'); -- reserved - d-cache: replacement strategy
+  sysinfo_mem(3)(19 downto 16) <= std_ulogic_vector(to_unsigned(index_size_f(DCACHE_BLOCK_SIZE),    4)) when (DCACHE_EN = true) else (others => '0');                -- d-cache: log2(block_size)
+  sysinfo_mem(3)(23 downto 20) <= std_ulogic_vector(to_unsigned(index_size_f(DCACHE_NUM_BLOCKS),    4)) when (DCACHE_EN = true) else (others => '0');                -- d-cache: log2(num_blocks)
+  sysinfo_mem(3)(27 downto 24) <= std_ulogic_vector(to_unsigned(index_size_f(DCACHE_ASSOCIATIVITY), 4)) when (DCACHE_EN = true) else (others => '0');                -- d-cache: log2(associativity)
+  sysinfo_mem(3)(31 downto 28) <= std_ulogic_vector(to_unsigned(DCACHE_REPLACE_POL, 4)) when (DCACHE_ASSOCIATIVITY > 1) and (DCACHE_EN = true) else (others => '0'); -- d-cache: replacement strategy
 
   -- SYSINFO(4): Base address of instruction memory space --
   sysinfo_mem(4) <= ispace_base_c; -- defined in neorv32_package.vhd file
