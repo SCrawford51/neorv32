@@ -158,6 +158,7 @@ begin
   run_test : process
     variable init_rand   : boolean := true;
     variable write_num   : natural := 0;
+    variable read_num    : natural := 0;
     variable offset_addr : natural := 0;
     variable init_read   : boolean := true;
     variable rand_addr   : integer := 0;
@@ -234,6 +235,51 @@ begin
       else
         wait until rising_edge(clk_gen);
         init_mem <= '0';
+      end if;
+    elsif counter_rst = '0' then
+      -- perform the "random address" read/write hit count
+      if read_num < max_num_reads then
+        rand_addr := rand_int(min_val => 0, max_val => DCACHE_NUM_BLOCKS * cache_offset_size_c + 1);
+        -- Read data that is not in cache, report error if successful
+        wait until rising_edge(clk_gen);
+        host_re           <= '1';
+        host_addr         <= std_ulogic_vector(to_unsigned(rand_addr, 32));
+        read_num := read_num + 1;
+
+        wait until rising_edge(clk_gen);
+        host_re           <= '0';
+        bad_data_read_err <= or_reduce_f(hit);
+
+        rand_addr := rand_int(min_val => 0, max_val => DCACHE_NUM_BLOCKS * cache_offset_size_c + 1);
+        -- Write then read with random address, report error if unsuccessful
+        wait until rising_edge(clk_gen);
+        ctrl_en           <= '1';
+        ctrl_we           <= '1';
+        ctrl_tag_we       <= '1';
+        ctrl_valid_we     <= '1';
+        ctrl_addr         <= std_ulogic_vector(to_unsigned(rand_addr, 32));
+        ctrl_wdata        <= cache_ext_mem(rand_addr*4); -- From neorv32_dcache_memory_tb_pkg.vhd (run dmem_gen.py to generate)
+
+        wait until rising_edge(clk_gen);
+        ctrl_en           <= '0';
+        ctrl_we           <= '0';
+        ctrl_tag_we       <= '0';
+        ctrl_valid_we     <= '0';
+
+        wait until rising_edge(clk_gen);
+        host_re           <= '1';
+        read_num := read_num + 1;
+
+        wait until rising_edge(clk_gen);
+        host_re           <= '0';
+
+        wait until rising_edge(clk_gen);
+        data_read_err     <= not(or_reduce_f(hit));
+
+      else 
+        wait for 2*t_clock_c;
+        wait until rising_edge(clk_gen);
+        tb_finished       <= '1';
       end if;
     else
       -- Tests while sets are invalid
@@ -324,47 +370,9 @@ begin
       counter_rst       <= '0';
 
       -- TODO: Perform reads on random address using rand_int() and max_num_reads
-      for i in 0 to max_num_reads/4 loop
-        rand_addr := rand_int(min_val => 0, max_val => DCACHE_NUM_BLOCKS * cache_offset_size_c + 1);
-        -- Read data that is not in cache, report error if successful
-        wait until rising_edge(clk_gen);
-        host_re           <= '1';
-        host_addr         <= std_ulogic_vector(to_unsigned(rand_addr, 32));
-
-        wait until rising_edge(clk_gen);
-        host_re           <= '0';
-        bad_data_read_err <= or_reduce_f(hit);
-
-        rand_addr := rand_int(min_val => 0, max_val => DCACHE_NUM_BLOCKS * cache_offset_size_c + 1);
-        -- Write then read with random address, report error if unsuccessful
-        wait until rising_edge(clk_gen);
-        ctrl_en           <= '1';
-        ctrl_we           <= '1';
-        ctrl_tag_we       <= '1';
-        ctrl_valid_we     <= '1';
-        ctrl_addr         <= std_ulogic_vector(to_unsigned(rand_addr, 32));
-        ctrl_wdata        <= cache_ext_mem(rand_addr*4); -- From neorv32_dcache_memory_tb_pkg.vhd (run dmem_gen.py to generate)
-
-        wait until rising_edge(clk_gen);
-        ctrl_en           <= '0';
-        ctrl_we           <= '0';
-        ctrl_tag_we       <= '0';
-        ctrl_valid_we     <= '0';
-
-        wait until rising_edge(clk_gen);
-        host_re           <= '1';
-
-        wait until rising_edge(clk_gen);
-        host_re           <= '0';
-
-        wait until rising_edge(clk_gen);
-        data_read_err     <= not(or_reduce_f(hit));
-      end loop;
-      
-      wait for 2*t_clock_c;
-      wait until rising_edge(clk_gen);
-      tb_finished       <= '1';
-
+      -- wait for 2*t_clock_c;
+      -- wait until rising_edge(clk_gen);
+      -- tb_finished       <= '1';
     end if;  --init_mem = '1'
   end process; --run_test
 
@@ -401,18 +409,20 @@ begin
       );
   
   -- count the hits and reads
-  counter_process : process(clk_gen)
+  counter_process : process(clk_gen, counter_rst, hit(n), host_re)
   begin
-    if (counter_rst = '0') then
-      if (hit(n) = '1') then
-        hit_count(n) <= hit_count(n) + 1;
-      end if;
-      if (host_re = '1') then
-        read_count(n) <= read_count(n) + 1;
-      end if;
-    else  -- counter_rst = '1'
+    if (counter_rst = '1') then
       hit_count(n)  <= 0;
       read_count(n) <= 0;
+    else 
+      if (rising_edge(clk_gen)) then
+        if (hit(n) = '1') then
+          hit_count(n) <= hit_count(n) + 1;
+        end if;
+        if (host_re = '1') then
+          read_count(n) <= read_count(n) + 1;
+        end if;
+      end if;
     end if;
   end process counter_process;
   
