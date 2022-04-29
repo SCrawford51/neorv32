@@ -69,12 +69,12 @@ architecture tb_neorv32_dcache_memory_rtl of tb_neorv32_dcache_memory is
 
   -- internals - hands off! --
   constant t_clock_c           : time                                        := (1 sec) / CLOCK_FREQUENCY;
-  constant self_term_c         : time                                        := 4 ms;
+  constant self_term_c         : time                                        := 250 ms;
   constant max_cycles_c        : natural                                     := self_term_c / t_clock_c;
   constant rand_setup_cycles_c : natural                                     := 4*624;
 
   -- read count
-  constant max_num_reads       : natural                                     := 100_000;
+  constant max_num_reads       : natural                                     := 1_000_000;
   
   -- counters
   type counter is array (ASSOCIATIVITY-1 downto 0) of natural;
@@ -319,7 +319,7 @@ begin
       host_addr         <= x"00000000";
 
       -- TODO: Perform reads on random address using rand_int() and max_num_reads
-      for i in 0 to max_num_reads loop
+      for i in 0 to max_num_reads/4 loop
         rand_addr := rand_int(min_val => 0, max_val => DCACHE_NUM_BLOCKS * cache_offset_size_c + 1);
         -- Read data that is not in cache, report error if successful
         wait until rising_edge(clk_gen);
@@ -420,12 +420,14 @@ begin
       hit_rate := real(hit_count(n)) / real(read_count(n)) * real(100);
       miss_rate := real((read_count(n) - hit_count(n))) / real(read_count(n)) * real(100);
       if n = 0 then
-        report lf & "Direct-Mapped HITS: " & integer'image(hit_count(n)) & lf &
+        report lf & "Cache Size (bytes): " & integer'image(DCACHE_NUM_BLOCKS * DCACHE_BLOCK_SIZE) & lf & 
+                    "Direct-Mapped HITS: " & integer'image(hit_count(n)) & lf &
                     "Direct-Mapped READS: " & integer'image(read_count(n)) & lf &
                     "Hit Rate (%): " & real'image(hit_rate) & lf &
                     "Miss Rate (%): " & real'image(miss_rate) & lf;
       else
-        report lf & integer'image(2**n) & "-way HITS: " & integer'image(hit_count(n)) & lf &
+        report lf & "Cache Size (bytes): " & integer'image(DCACHE_NUM_BLOCKS * DCACHE_BLOCK_SIZE) & lf & 
+                    integer'image(2**n) & "-way HITS: " & integer'image(hit_count(n)) & lf &
                     integer'image(2**n) & "-way READS: " & integer'image(read_count(n)) & lf &
                     "Hit Rate (%): " & real'image(hit_rate) & lf &
                     "Miss Rate (%): " & real'image(miss_rate) & lf;
