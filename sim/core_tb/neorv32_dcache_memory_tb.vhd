@@ -41,7 +41,6 @@
 
 library ieee;
 use ieee.std_logic_1164.all;
-use ieee.std_logic_unsigned.all;
 use ieee.numeric_std.all;
 use ieee.math_real.all;
 
@@ -115,15 +114,6 @@ architecture tb_neorv32_dcache_memory_rtl of tb_neorv32_dcache_memory is
   signal data_read_err         : std_ulogic                                  := '0';
   signal tb_error              : std_ulogic                                  := '0';
   signal tb_finished           : std_ulogic                                  := '0';
-  
-  impure function rand_int(min_val, max_val : integer) return integer is
-    variable r : real;
-    variable seed1, seed2 : integer := 999;
-  begin
-    uniform(seed1, seed2, r);
-    return integer(
-      round(r * real(max_val - min_val + 1) + real(min_val) - 0.5));
-  end function;
 
 begin
   -- Clock/Reset Generator ---------------------------------------------------------------------
@@ -167,7 +157,20 @@ begin
     variable write_num   : natural := 0;
     variable offset_addr : natural := 0;
     variable init_read   : boolean := true;
-    variable data_mem_addr    : integer := 0;
+    variable rand_addr   : integer := 0;
+
+    -- seeds for random number generator
+    variable seed1       : integer := 999;
+    variable seed2       : integer := 999;
+
+    impure function rand_int(min_val, max_val : integer) return integer is
+      variable r : real;
+    begin
+      uniform(seed1, seed2, r);
+      return integer(
+        round(r * real(max_val - min_val + 1) + real(min_val) - 0.5));
+    end function;
+
   begin
     if DCACHE_REPLACE_POL = 4 and init_rand then
       wait for rand_setup_cycles_c*t_clock_c;
@@ -315,13 +318,43 @@ begin
       host_re           <= '0';
       host_addr         <= x"00000000";
 
-      -- consider getting rid of this if we want to count the previous operations
-      rst_gen           <= '1';
-
       -- TODO: Perform reads on random address using rand_int() and max_num_reads
-      -- for i in 0 to max_num_reads loop
-        
-      -- end loop;
+      for i in 0 to max_num_reads loop
+        rand_addr := rand_int(min_val => 0, max_val => DCACHE_NUM_BLOCKS * cache_offset_size_c + 1);
+        -- Read data that is not in cache, report error if successful
+        wait until rising_edge(clk_gen);
+        host_re           <= '1';
+        host_addr         <= std_ulogic_vector(to_unsigned(rand_addr, 32));
+
+        wait until rising_edge(clk_gen);
+        host_re           <= '0';
+        bad_data_read_err <= or_reduce_f(hit);
+
+        rand_addr := rand_int(min_val => 0, max_val => DCACHE_NUM_BLOCKS * cache_offset_size_c + 1);
+        -- Write then read with random address, report error if unsuccessful
+        wait until rising_edge(clk_gen);
+        ctrl_en           <= '1';
+        ctrl_we           <= '1';
+        ctrl_tag_we       <= '1';
+        ctrl_valid_we     <= '1';
+        ctrl_addr         <= std_ulogic_vector(to_unsigned(rand_addr, 32));
+        ctrl_wdata        <= cache_ext_mem(rand_addr*4); -- From neorv32_dcache_memory_tb_pkg.vhd (run dmem_gen.py to generate)
+
+        wait until rising_edge(clk_gen);
+        ctrl_en           <= '0';
+        ctrl_we           <= '0';
+        ctrl_tag_we       <= '0';
+        ctrl_valid_we     <= '0';
+
+        wait until rising_edge(clk_gen);
+        host_re           <= '1';
+
+        wait until rising_edge(clk_gen);
+        host_re           <= '0';
+
+        wait until rising_edge(clk_gen);
+        data_read_err     <= not(or_reduce_f(hit));
+      end loop;
       
       wait for 2*t_clock_c;
       wait until rising_edge(clk_gen);
@@ -380,10 +413,23 @@ begin
   
   -- report number of hits and number of reads for each associativity
   report_rates : process (tb_finished, timeout_err)
+    variable hit_rate : real;
+    variable miss_rate : real;
   begin
     if (tb_finished = '1' or timeout_err = '1') then
-      report lf & integer'image(2**n) & "-way HITS: " & integer'image(hit_count(n)) & lf &
-                  integer'image(2**n) & "-way READS: " & integer'image(read_count(n)) & lf;
+      hit_rate := real(hit_count(n)) / real(read_count(n)) * real(100);
+      miss_rate := real((read_count(n) - hit_count(n))) / real(read_count(n)) * real(100);
+      if n = 0 then
+        report lf & "Direct-Mapped HITS: " & integer'image(hit_count(n)) & lf &
+                    "Direct-Mapped READS: " & integer'image(read_count(n)) & lf &
+                    "Hit Rate (%): " & real'image(hit_rate) & lf &
+                    "Miss Rate (%): " & real'image(miss_rate) & lf;
+      else
+        report lf & integer'image(2**n) & "-way HITS: " & integer'image(hit_count(n)) & lf &
+                    integer'image(2**n) & "-way READS: " & integer'image(read_count(n)) & lf &
+                    "Hit Rate (%): " & real'image(hit_rate) & lf &
+                    "Miss Rate (%): " & real'image(miss_rate) & lf;
+      end if;
     end if;  
   end process report_rates;
 
