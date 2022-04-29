@@ -81,10 +81,13 @@ architecture tb_neorv32_dcache_memory_rtl of tb_neorv32_dcache_memory is
   signal hit_count             : counter                                     := (others => 0);
   signal read_count            : counter                                     := (others => 0);
 
+  signal counter_rst           : std_ulogic                                  := '1';
+
   -- generators --
   signal run_tb                : std_ulogic                                  := '1';
   signal clk_gen               : std_ulogic                                  := '0';
   signal rst_gen               : std_ulogic                                  := '0';
+
 
   -- testbench signals
   signal prev_addr             : unsigned(31 downto 0)                       := x"00000000";
@@ -318,6 +321,8 @@ begin
       host_re           <= '0';
       host_addr         <= x"00000000";
 
+      counter_rst       <= '0';
+
       -- TODO: Perform reads on random address using rand_int() and max_num_reads
       for i in 0 to max_num_reads/4 loop
         rand_addr := rand_int(min_val => 0, max_val => DCACHE_NUM_BLOCKS * cache_offset_size_c + 1);
@@ -398,14 +403,14 @@ begin
   -- count the hits and reads
   counter_process : process(clk_gen)
   begin
-    if (rst_gen = '0') then
+    if (counter_rst = '0') then
       if (hit(n) = '1') then
         hit_count(n) <= hit_count(n) + 1;
       end if;
       if (host_re = '1') then
         read_count(n) <= read_count(n) + 1;
       end if;
-    else  -- rst_gen = '1'
+    else  -- counter_rst = '1'
       hit_count(n)  <= 0;
       read_count(n) <= 0;
     end if;
