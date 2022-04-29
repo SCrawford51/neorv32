@@ -51,7 +51,7 @@ use neorv32.neorv32_dcache_memory_tb_pkg.all;
 entity tb_neorv32_dcache_memory is
   generic (
     CLOCK_FREQUENCY    : natural := 50000000; -- clock frequency of clk_i in Hz
-    DCACHE_NUM_BLOCKS  : natural := 64;       -- number of blocks (min 1), has to be a power of 2
+    DCACHE_NUM_BLOCKS  : natural := 512;       -- number of blocks (min 1), has to be a power of 2
     DCACHE_BLOCK_SIZE  : natural := 8;        -- block size in bytes (min 4), has to be a power of 2
     ASSOCIATIVITY      : natural := 3;        -- associativity; 2**(n-1)-way 1=direct-mapped, 2=2-way set-associative, 3=4-way set associative
     DCACHE_REPLACE_POL : natural := 1;        -- cache replacement policy; 1=LRU, 2=Pseudo-LRU, 3=FIFO, 4=Random
