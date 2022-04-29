@@ -79,7 +79,6 @@ architecture neorv32_cache_memory_rtl of neorv32_cache_memory is
   -- cache layout --
   constant cache_offset_size_c  : natural := CACHE_BLOCK_SIZE / 4; -- offset addresses full 32-bit words
   constant cache_offset_bits_c  : natural := num_bits_f(cache_offset_size_c - 1); 
-  constant cache_offset_index_c : natural := index_size_f(cache_offset_size_c - 1); 
   constant cache_index_size_c   : natural := CACHE_NUM_BLOCKS / ASSOCIATIVITY;
   constant cache_index_bits_c   : natural := num_bits_f(cache_index_size_c - 1);
   constant cache_tag_bits_c     : natural := 32 - (cache_offset_bits_c + cache_index_bits_c + 2); -- 2 additional bits for byte offset
@@ -117,7 +116,7 @@ architecture neorv32_cache_memory_rtl of neorv32_cache_memory is
   );
   
   -- cache data memory --
-  type cache_mem_t is array (0 to CACHE_NUM_BLOCKS-1, 0 to cache_offset_bits_c) of std_ulogic_vector(31 downto 0);
+  type cache_mem_t is array (0 to CACHE_NUM_BLOCKS-1, 0 to cache_offset_size_c-1) of std_ulogic_vector(31 downto 0);
   signal cache_data_memory : cache_mem_t  := (others => (others => (others => '0')));
 
   -- cache data memory access --

@@ -1,5 +1,5 @@
 -- #################################################################################################
--- # << NEORV32 - Processor-Internal Data Cache >>                                                 #
+-- # << NEORV32 - Processor-Internal Cache >>                                                      #
 -- # ********************************************************************************************* #
 -- # Direct mapped (CACHE_NUM_SETS = 1) or 2-way set-associative (CACHE_NUM_SETS = 2).             #
 -- # Least recently used replacement policy (if CACHE_NUM_SETS > 1).                               #
@@ -46,7 +46,7 @@ entity neorv32_cache is
   generic (
     CACHE_NUM_BLOCKS  :  natural; -- number of blocks (min 1), has to be a power of 2
     CACHE_BLOCK_SIZE  :  natural; -- block size in bytes (min 4), has to be a power of 2
-    ASSOCIATIVITY      :  natural; -- associativity / number of sets (1=direct_mapped), has to be a power of 2
+    ASSOCIATIVITY     :  natural; -- associativity / number of sets (1=direct_mapped), has to be a power of 2
     CACHE_REPLACE_POL :  natural  -- cache replacement policy; 1=LRU, 2=Pseudo-LRU, 3=FIFO, 4=Random
   );
   port (
@@ -79,16 +79,15 @@ end neorv32_cache;
 architecture neorv32_cache_rtl of neorv32_cache is
 
   -- cache layout --
-  constant cache_offset_size_c : natural := index_size_f(CACHE_BLOCK_SIZE/4); -- offset addresses full 32-bit words
-  constant cache_index_size_c  : natural := index_size_f(CACHE_NUM_BLOCKS);
-  constant cache_tag_size_c    : natural := 32 - (cache_offset_size_c + cache_index_size_c + 2); -- 2 additonal bits for byte offset
+  constant cache_offset_size_c : natural := CACHE_BLOCK_SIZE/4; -- offset addresses full 32-bit words
+  constant cache_offset_bits_c  : natural := num_bits_f(cache_offset_size_c - 1); 
 
   -- cache memory --
   component neorv32_cache_memory
   generic (
     CACHE_NUM_BLOCKS  : natural := 64; -- number of blocks (min 1), has to be a power of 2
     CACHE_BLOCK_SIZE  : natural := 4;  -- block size in bytes (min 4), has to be a power of 2
-    ASSOCIATIVITY      : natural := 1;  -- associativity; 1=direct-mapped, 2=2-way set-associative
+    ASSOCIATIVITY     : natural := 1;  -- associativity; 1=direct-mapped, 2=2-way set-associative
     CACHE_REPLACE_POL : natural := 1   -- cache replacement policy; 1=LRU, 2=Pseudo-LRU, 3=FIFO, 4=Random
   );
   port (
@@ -138,6 +137,8 @@ architecture neorv32_cache_rtl of neorv32_cache is
     addr_reg_nxt  : std_ulogic_vector(31 downto 0);
     re_buf        : std_ulogic; -- read request buffer
     re_buf_nxt    : std_ulogic;
+    we_buf        : std_ulogic; -- write request buffer
+    we_buf_nxt    : std_ulogic;
     clear_buf     : std_ulogic; -- clear request buffer
     clear_buf_nxt : std_ulogic;
   end record;
@@ -148,11 +149,11 @@ begin
   -- Sanity Checks --------------------------------------------------------------------------
   -- -------------------------------------------------------------------------------------------
   -- configuration --
-  assert not (is_power_of_two_f(CACHE_NUM_BLOCKS) = false) report "NEORV32 PROCESSOR CONFIG ERROR! d-cache number of blocks <CACHE_NUM_BLOCKS> has to be a power of 2." severity error;
-  assert not (is_power_of_two_f(CACHE_BLOCK_SIZE) = false) report "NEORV32 PROCESSOR CONFIG ERROR! d-cache block size <CACHE_BLOCK_SIZE> has to be a power of 2." severity error;
-  assert not ((is_power_of_two_f(ASSOCIATIVITY) = false)) report "NEORV32 PROCESSOR CONFIG ERROR! d-cache associativity <ASSOCIATIVITY> has to be a power of 2." severity error;
-  assert not (CACHE_NUM_BLOCKS < 1) report "NEORV32 PROCESSOR CONFIG ERROR! d-cache number of blocks <CACHE_NUM_BLOCKS> has to be >= 1." severity error;
-  assert not (CACHE_BLOCK_SIZE < 4) report "NEORV32 PROCESSOR CONFIG ERROR! d-cache block size <CACHE_BLOCK_SIZE> has to be >= 4." severity error;
+  assert not (is_power_of_two_f(CACHE_NUM_BLOCKS) = false) report "NEORV32 PROCESSOR CONFIG ERROR! cache number of blocks <CACHE_NUM_BLOCKS> has to be a power of 2." severity error;
+  assert not (is_power_of_two_f(CACHE_BLOCK_SIZE) = false) report "NEORV32 PROCESSOR CONFIG ERROR! cache block size <CACHE_BLOCK_SIZE> has to be a power of 2." severity error;
+  assert not ((is_power_of_two_f(ASSOCIATIVITY) = false)) report "NEORV32 PROCESSOR CONFIG ERROR! cache associativity <ASSOCIATIVITY> has to be a power of 2." severity error;
+  assert not (CACHE_NUM_BLOCKS < 1) report "NEORV32 PROCESSOR CONFIG ERROR! cache number of blocks <CACHE_NUM_BLOCKS> has to be >= 1." severity error;
+  assert not (CACHE_BLOCK_SIZE < 4) report "NEORV32 PROCESSOR CONFIG ERROR! cache block size <CACHE_BLOCK_SIZE> has to be >= 4." severity error;
 
   -- Control Engine FSM Sync ----------------------------------------------------------------
   -- -------------------------------------------------------------------------------------------
@@ -161,11 +162,13 @@ begin
     if (rstn_i = '0') then
       ctrl.state     <= S_CACHE_CLEAR;
       ctrl.re_buf    <= '0';
+      ctrl.we_buf    <= '0';
       ctrl.clear_buf <= '0';
       ctrl.addr_reg  <= (others => '-');
     elsif rising_edge(clk_i) then
       ctrl.state     <= ctrl.state_nxt;
       ctrl.re_buf    <= ctrl.re_buf_nxt;
+      ctrl.we_buf    <= ctrl.we_buf_nxt;
       ctrl.clear_buf <= ctrl.clear_buf_nxt;
       ctrl.addr_reg  <= ctrl.addr_reg_nxt;
     end if;
@@ -173,12 +176,13 @@ begin
 
   -- Control Engine FSM Comb ----------------------------------------------------------------
   -- -------------------------------------------------------------------------------------------
-  ctrl_engine_fsm_comb: process(ctrl, cache, clear_i, host_addr_i, host_re_i, bus_rdata_i, bus_ack_i, bus_err_i)
+  ctrl_engine_fsm_comb: process(ctrl, cache, clear_i, host_addr_i, host_re_i, host_we_i, bus_rdata_i, bus_ack_i, bus_err_i)
   begin
     -- control defaults --
     ctrl.state_nxt        <= ctrl.state;
     ctrl.addr_reg_nxt     <= ctrl.addr_reg;
     ctrl.re_buf_nxt       <= ctrl.re_buf or host_re_i;
+    ctrl.we_buf_nxt       <= ctrl.we_buf or host_we_i;
     ctrl.clear_buf_nxt    <= ctrl.clear_buf or clear_i; -- buffer clear request from CPU
 
     -- cache defaults --
@@ -214,6 +218,9 @@ begin
         elsif (host_re_i = '1') or (ctrl.re_buf = '1') then -- cache access
           ctrl.re_buf_nxt <= '0';
           ctrl.state_nxt  <= S_CACHE_CHECK;
+        elsif (host_we_i = '1') or (ctrl.we_buf = '1') then -- write cache access
+          ctrl.we_buf_nxt <= '0';
+          ctrl.state_nxt  <= S_CACHE_MISS;
         end if;
 
       when S_CACHE_CLEAR => -- invalidate all cache entries
@@ -235,7 +242,7 @@ begin
       -- ------------------------------------------------------------
         -- compute block base address --
         ctrl.addr_reg_nxt <= host_addr_i;
-        ctrl.addr_reg_nxt((2+cache_offset_size_c)-1 downto 2) <= (others => '0'); -- block-aligned
+        ctrl.addr_reg_nxt((2+cache_offset_bits_c)-1 downto 2) <= (others => '0'); -- block-aligned
         ctrl.addr_reg_nxt(1 downto 0) <= "00"; -- word-aligned
         --
         ctrl.state_nxt <= S_BUS_DOWNLOAD_REQ;
@@ -254,7 +261,7 @@ begin
           ctrl.state_nxt <= S_BUS_ERROR;
         elsif (bus_ack_i = '1') then -- ACK = write to cache and get next word
           cache.ctrl_we <= '1'; -- write to cache
-          if (and_reduce_f(ctrl.addr_reg((2+cache_offset_size_c)-1 downto 2)) = '1') then -- block complete?
+          if (and_reduce_f(ctrl.addr_reg((2+cache_offset_bits_c)-1 downto 2)) = '1') then -- block complete?
             cache.ctrl_tag_we   <= '1'; -- write tag of current address
             cache.ctrl_valid_we <= '1'; -- current block is valid now
             ctrl.state_nxt      <= S_CACHE_RESYNC_0;
@@ -294,7 +301,7 @@ begin
   generic map (
     CACHE_NUM_BLOCKS  => CACHE_NUM_BLOCKS, -- number of blocks (min 1), has to be a power of 2
     CACHE_BLOCK_SIZE  => CACHE_BLOCK_SIZE, -- block size in bytes (min 4), has to be a power of 2
-    ASSOCIATIVITY     => ASSOCIATIVITY,     -- associativity; 0=direct-mapped, 1=2-way set-associative
+    ASSOCIATIVITY     => ASSOCIATIVITY,    -- associativity; 0=direct-mapped, 1=2-way set-associative
     CACHE_REPLACE_POL => CACHE_REPLACE_POL -- cache replacement policy; 1=LRU, 2=Pseudo-LRU, 3=FIFO, 4=Random
   )
   port map (

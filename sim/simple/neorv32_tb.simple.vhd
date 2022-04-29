@@ -55,7 +55,7 @@ entity neorv32_tb_simple is
     CPU_EXTENSION_RISCV_U        : boolean := true;
     CPU_EXTENSION_RISCV_Zicsr    : boolean := true;
     CPU_EXTENSION_RISCV_Zifencei : boolean := true;
-    EXT_IMEM_C                   : boolean := false;   -- false: use and boot from proc-internal IMEM, true: use and boot from external (initialized) simulated IMEM (ext. mem A)
+    EXT_IMEM_C                   : boolean := true;   -- false: use and boot from proc-internal IMEM, true: use and boot from external (initialized) simulated IMEM (ext. mem A)
     MEM_INT_IMEM_SIZE            : natural := 16*1024  -- size in bytes of processor-internal IMEM / external mem A
   );
 end neorv32_tb_simple;
@@ -200,16 +200,17 @@ begin
     MEM_INT_DMEM_EN              => int_dmem_c,    -- implement processor-internal data memory
     MEM_INT_DMEM_SIZE            => dmem_size_c,   -- size of processor-internal data memory in bytes
     -- Internal Cache memory --
-    ICACHE_EN                    => true,          -- implement instruction cache
+    ICACHE_EN                    => false,          -- implement instruction cache
     ICACHE_NUM_BLOCKS            => 8,             -- i-cache: number of blocks (min 2), has to be a power of 2
     ICACHE_BLOCK_SIZE            => 64,            -- i-cache: block size in bytes (min 4), has to be a power of 2
     ICACHE_ASSOCIATIVITY         => 2,             -- i-cache: associativity / number of sets (1=direct_mapped), has to be a power of 2
+    ICACHE_REPLACE_POL           => 1,             -- i-cache replacement policy; 1=LRU, 2=Pseudo-LRU, 3=FIFO, 4=Random
     -- Data Cache --
     DCACHE_EN                    => true,          -- implement data cache
     DCACHE_NUM_BLOCKS            => 8,             -- d-cache: number of blocks (min 2), has to be a power of 2
     DCACHE_BLOCK_SIZE            => 64,            -- d-cache: block size in bytes (min 4), has to be a power of 2
     DCACHE_ASSOCIATIVITY         => 2,             -- d-cache: associativity / number of sets (1=direct_mapped), has to be a power of 2
-    DCACHE_REPLACE_POL           => 3,             -- cache replacement policy; 1=LRU, 2=Pseudo-LRU, 3=FIFO, 4=Random
+    DCACHE_REPLACE_POL           => 2,             -- d-cache replacement policy; 1=LRU, 2=Pseudo-LRU, 3=FIFO, 4=Random
     -- External memory interface --
     MEM_EXT_EN                   => true,          -- implement external memory bus interface?
     MEM_EXT_TIMEOUT              => 256,           -- cycles after a pending bus access auto-terminates (0 = disabled)
