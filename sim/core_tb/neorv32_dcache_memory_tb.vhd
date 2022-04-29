@@ -302,9 +302,27 @@ begin
 
       wait until rising_edge(clk_gen);
       data_read_err     <= not(or_reduce_f(hit));
-      
-      -- TODO: Perform reads on random address using rand_int() and max_num_reads
 
+      -- reinitialize signals
+      wait until rising_edge(clk_gen);
+      ctrl_en           <= '0';
+      ctrl_we           <= '0';
+      ctrl_tag_we       <= '0';
+      ctrl_valid_we     <= '0';
+      ctrl_invalid_we   <= '0';
+      ctrl_addr         <= x"00000000";
+      ctrl_wdata        <= x"00000000";
+      host_re           <= '0';
+      host_addr         <= x"00000000";
+
+      -- consider getting rid of this if we want to count the previous operations
+      rst_gen           <= '1';
+
+      -- TODO: Perform reads on random address using rand_int() and max_num_reads
+      -- for i in 0 to max_num_reads loop
+        
+      -- end loop;
+      
       wait for 2*t_clock_c;
       wait until rising_edge(clk_gen);
       tb_finished       <= '1';
@@ -343,27 +361,27 @@ begin
       ctrl_valid_i   => ctrl_valid_we,              -- make selected block valid
       ctrl_invalid_i => ctrl_invalid_we             -- make selected block invalid
       );
-
-  -- count the hits
-  hit_counter : process(clk_gen)
-  begin
-    if (hit(n) = '1') then
-      hit_count(n) <= hit_count(n) + 1;
-    end if;
-  end process hit_counter;
   
-  -- count the number of attempted reads
-  read_counter : process(clk_gen)
+  -- count the hits and reads
+  counter_process : process(clk_gen)
   begin
-    if host_re = '1' then
-      read_count(n) <= read_count(n) + 1;
+    if (rst_gen = '0') then
+      if (hit(n) = '1') then
+        hit_count(n) <= hit_count(n) + 1;
+      end if;
+      if (host_re = '1') then
+        read_count(n) <= read_count(n) + 1;
+      end if;
+    else  -- rst_gen = '1'
+      hit_count(n)  <= 0;
+      read_count(n) <= 0;
     end if;
-  end process read_counter;
+  end process counter_process;
   
   -- report number of hits and number of reads for each associativity
-  report_rates : process (tb_finished)
+  report_rates : process (tb_finished, timeout_err)
   begin
-    if (tb_finished = '1') then
+    if (tb_finished = '1' or timeout_err = '1') then
       report lf & integer'image(2**n) & "-way HITS: " & integer'image(hit_count(n)) & lf &
                   integer'image(2**n) & "-way READS: " & integer'image(read_count(n)) & lf;
     end if;  
