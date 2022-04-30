@@ -83,6 +83,8 @@ architecture tb_neorv32_dcache_memory_rtl of tb_neorv32_dcache_memory is
 
   signal counter_rst           : std_ulogic                                  := '1';
 
+  signal rand_addr             : integer                                     := 0;
+
   -- generators --
   signal run_tb                : std_ulogic                                  := '1';
   signal clk_gen               : std_ulogic                                  := '0';
@@ -161,7 +163,6 @@ begin
     variable read_num    : natural := 0;
     variable offset_addr : natural := 0;
     variable init_read   : boolean := true;
-    variable rand_addr   : integer := 0;
 
     -- seeds for random number generator
     variable seed1       : integer := 999;
@@ -237,10 +238,11 @@ begin
         init_mem <= '0';
       end if;
     elsif counter_rst = '0' then
-      -- perform the "random address" read/write hit count
       if read_num < max_num_reads then
-        rand_addr := rand_int(min_val => 0, max_val => DCACHE_NUM_BLOCKS * cache_offset_size_c + 1);
-        -- Read data that is not in cache, report error if successful
+        wait until rising_edge(clk_gen);
+        rand_addr <= rand_int(min_val => 0, max_val => DCACHE_NUM_BLOCKS * cache_offset_size_c + 1); -- Can we make this a signal so that it's easier to see in the waveform viewer
+
+        -- Attempt to read data from random address
         wait until rising_edge(clk_gen);
         host_re           <= '1';
         host_addr         <= std_ulogic_vector(to_unsigned(rand_addr, 32));
@@ -248,33 +250,22 @@ begin
 
         wait until rising_edge(clk_gen);
         host_re           <= '0';
-        bad_data_read_err <= or_reduce_f(hit);
 
-        rand_addr := rand_int(min_val => 0, max_val => DCACHE_NUM_BLOCKS * cache_offset_size_c + 1);
-        -- Write then read with random address, report error if unsuccessful
-        wait until rising_edge(clk_gen);
-        ctrl_en           <= '1';
-        ctrl_we           <= '1';
-        ctrl_tag_we       <= '1';
-        ctrl_valid_we     <= '1';
-        ctrl_addr         <= std_ulogic_vector(to_unsigned(rand_addr, 32));
-        ctrl_wdata        <= cache_ext_mem(rand_addr*4); -- From neorv32_dcache_memory_tb_pkg.vhd (run dmem_gen.py to generate)
+        if hit(0) = '0' then
+          wait until rising_edge(clk_gen);
+          ctrl_en           <= '1';
+          ctrl_we           <= '1';
+          ctrl_tag_we       <= '1';
+          ctrl_valid_we     <= '1';
+          ctrl_addr         <= std_ulogic_vector(to_unsigned(rand_addr, 32));
+          ctrl_wdata        <= cache_ext_mem(rand_addr); -- From neorv32_dcache_memory_tb_pkg.vhd (run dmem_gen.py to generate)
 
-        wait until rising_edge(clk_gen);
-        ctrl_en           <= '0';
-        ctrl_we           <= '0';
-        ctrl_tag_we       <= '0';
-        ctrl_valid_we     <= '0';
-
-        wait until rising_edge(clk_gen);
-        host_re           <= '1';
-        read_num := read_num + 1;
-
-        wait until rising_edge(clk_gen);
-        host_re           <= '0';
-
-        wait until rising_edge(clk_gen);
-        data_read_err     <= not(or_reduce_f(hit));
+          wait until rising_edge(clk_gen);
+          ctrl_en           <= '0';
+          ctrl_we           <= '0';
+          ctrl_tag_we       <= '0';
+          ctrl_valid_we     <= '0';
+        end if;
 
       else 
         wait for 2*t_clock_c;
