@@ -1534,9 +1534,44 @@ package neorv32_package is
     );
   end component;
 
-  -- Component: CPU Cache ----------------------------------------------------------------------
+  -- Component: CPU iCache ----------------------------------------------------------------------
   -- -------------------------------------------------------------------------------------------
-  component neorv32_cache
+  component neorv32_icache
+    generic (
+      ICACHE_NUM_BLOCKS : natural; -- number of blocks (min 1), has to be a power of 2
+      ICACHE_BLOCK_SIZE : natural; -- block size in bytes (min 4), has to be a power of 2
+      ICACHE_NUM_SETS   : natural  -- associativity / number of sets (1=direct_mapped), has to be a power of 2
+    );
+    port (
+      -- global control --
+      clk_i        : in  std_ulogic; -- global clock, rising edge
+      rstn_i       : in  std_ulogic; -- global reset, low-active, async
+      clear_i      : in  std_ulogic; -- cache clear
+      miss_o       : out std_ulogic; -- cache miss
+      -- host controller interface --
+      host_addr_i  : in  std_ulogic_vector(data_width_c-1 downto 0); -- bus access address
+      host_rdata_o : out std_ulogic_vector(data_width_c-1 downto 0); -- bus read data
+      host_wdata_i : in  std_ulogic_vector(data_width_c-1 downto 0); -- bus write data
+      host_ben_i   : in  std_ulogic_vector(03 downto 0); -- byte enable
+      host_we_i    : in  std_ulogic; -- write enable
+      host_re_i    : in  std_ulogic; -- read enable
+      host_ack_o   : out std_ulogic; -- bus transfer acknowledge
+      host_err_o   : out std_ulogic; -- bus transfer error
+      -- peripheral bus interface --
+      bus_addr_o   : out std_ulogic_vector(data_width_c-1 downto 0); -- bus access address
+      bus_rdata_i  : in  std_ulogic_vector(data_width_c-1 downto 0); -- bus read data
+      bus_wdata_o  : out std_ulogic_vector(data_width_c-1 downto 0); -- bus write data
+      bus_ben_o    : out std_ulogic_vector(03 downto 0); -- byte enable
+      bus_we_o     : out std_ulogic; -- write enable
+      bus_re_o     : out std_ulogic; -- read enable
+      bus_ack_i    : in  std_ulogic; -- bus transfer acknowledge
+      bus_err_i    : in  std_ulogic  -- bus transfer error
+    );
+  end component;
+
+    -- Component: CPU dCache ----------------------------------------------------------------------
+  -- -------------------------------------------------------------------------------------------
+  component neorv32_dcache
     generic (
       CACHE_NUM_BLOCKS  : natural := 4;  -- number of blocks (min 1), has to be a power of 2
       CACHE_BLOCK_SIZE  : natural := 16; -- block size in bytes (min 4), has to be a power of 2

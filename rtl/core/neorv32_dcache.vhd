@@ -42,7 +42,7 @@ use ieee.numeric_std.all;
 library neorv32;
 use neorv32.neorv32_package.all;
 
-entity neorv32_cache is
+entity neorv32_dcache is
   generic (
     CACHE_NUM_BLOCKS  :  natural; -- number of blocks (min 1), has to be a power of 2
     CACHE_BLOCK_SIZE  :  natural; -- block size in bytes (min 4), has to be a power of 2
@@ -74,9 +74,9 @@ entity neorv32_cache is
     bus_ack_i    : in  std_ulogic; -- bus transfer acknowledge
     bus_err_i    : in  std_ulogic  -- bus transfer error
   );
-end neorv32_cache;
+end neorv32_dcache;
 
-architecture neorv32_cache_rtl of neorv32_cache is
+architecture neorv32_dcache_rtl of neorv32_dcache is
 
   -- cache layout --
   constant cache_offset_size_c : natural := CACHE_BLOCK_SIZE/4; -- offset addresses full 32-bit words
@@ -115,6 +115,7 @@ architecture neorv32_cache_rtl of neorv32_cache is
   type cache_if_t is record
     clear           : std_ulogic; -- cache clear
     host_addr       : std_ulogic_vector(31 downto 0); -- cpu access address
+    host_re         : std_ulogic; -- cpu access read enable
     host_rdata      : std_ulogic_vector(31 downto 0); -- cpu read data
     hit             : std_ulogic; -- hit access
     ctrl_en         : std_ulogic; -- control access enable
@@ -125,10 +126,11 @@ architecture neorv32_cache_rtl of neorv32_cache is
     ctrl_valid_we   : std_ulogic; -- control valid flag set
     ctrl_invalid_we : std_ulogic; -- control valid flag clear
   end record;
+
   signal cache : cache_if_t;
 
   -- control engine --
-  type ctrl_engine_state_t is (S_IDLE, S_CACHE_CLEAR, S_CACHE_CHECK, S_CACHE_MISS, S_BUS_DOWNLOAD_REQ, S_BUS_DOWNLOAD_GET,
+  type ctrl_engine_state_t is (S_IDLE, S_CACHE_CLEAR, S_CACHE_CHECK_0, S_CACHE_CHECK_1, S_CACHE_MISS, S_BUS_DOWNLOAD_REQ, S_BUS_DOWNLOAD_GET,
                                S_CACHE_RESYNC_0, S_CACHE_RESYNC_1, S_BUS_ERROR);
   type ctrl_t is record
     state         : ctrl_engine_state_t; -- current state
@@ -142,7 +144,17 @@ architecture neorv32_cache_rtl of neorv32_cache is
     clear_buf     : std_ulogic; -- clear request buffer
     clear_buf_nxt : std_ulogic;
   end record;
+
   signal ctrl : ctrl_t;
+
+  type host_t is record
+    addr_reg      : std_ulogic_vector(31 downto 0); -- address register for block download
+    addr_reg_nxt  : std_ulogic_vector(31 downto 0);
+    re_buf        : std_ulogic; -- read request buffer
+    re_buf_nxt    : std_ulogic;
+  end record;
+
+  signal host : host_t;
 
 begin
 
@@ -185,13 +197,18 @@ begin
     ctrl.we_buf_nxt       <= ctrl.we_buf or host_we_i;
     ctrl.clear_buf_nxt    <= ctrl.clear_buf or clear_i; -- buffer clear request from CPU
 
+    -- host defaults
+    host.addr_reg_nxt <= host.addr_reg;
+    host.re_buf_nxt   <= host.re_buf;
+
     -- cache defaults --
     cache.clear           <= '0';
     cache.host_addr       <= host_addr_i;
     cache.ctrl_en         <= '0';
     cache.ctrl_addr       <= ctrl.addr_reg;
     cache.ctrl_we         <= '0';
-    cache.ctrl_wdata      <= bus_rdata_i;
+    cache.host_re         <= '0';
+    cache.ctrl_wdata      <= host_wdata_i;
     cache.ctrl_tag_we     <= '0';
     cache.ctrl_valid_we   <= '0';
     cache.ctrl_invalid_we <= '0';
@@ -215,12 +232,16 @@ begin
       -- ------------------------------------------------------------
         if (ctrl.clear_buf = '1') then -- cache control operation?
           ctrl.state_nxt <= S_CACHE_CLEAR;
-        elsif (host_re_i = '1') or (ctrl.re_buf = '1') then -- cache access
-          ctrl.re_buf_nxt <= '0';
-          ctrl.state_nxt  <= S_CACHE_CHECK;
-        elsif (host_we_i = '1') or (ctrl.we_buf = '1') then -- write cache access
-          ctrl.we_buf_nxt <= '0';
-          ctrl.state_nxt  <= S_CACHE_MISS;
+        elsif (host_re_i = '1') then -- cache access
+          cache.host_re    <= '1';
+          cache.host_addr  <= host_addr_i;
+          cache.ctrl_wdata <= bus_rdata_i;
+          ctrl.state_nxt  <= S_CACHE_CHECK_0;
+        elsif (host_we_i = '1') then 
+          cache.host_re    <= '1';
+          cache.host_addr  <= host_addr_i;
+          cache.ctrl_wdata <= host_wdata_i;
+          ctrl.state_nxt  <= S_CACHE_CHECK_0;
         end if;
 
       when S_CACHE_CLEAR => -- invalidate all cache entries
@@ -229,13 +250,18 @@ begin
         cache.clear        <= '1';
         ctrl.state_nxt     <= S_IDLE;
 
-      when S_CACHE_CHECK => -- finalize host access if cache hit
+      when S_CACHE_CHECK_0 => -- check for write hit or miss
       -- ------------------------------------------------------------
-        if (cache.hit = '1') then -- cache HIT
+        cache.host_re   <= '0';
+        ctrl.state_nxt  <= S_CACHE_CHECK_1;
+
+      when S_CACHE_CHECK_1 => -- finalize host access if cache hit
+      -- ------------------------------------------------------------
+        if (cache.hit = '1') then -- cache hit
           host_ack_o     <= '1';
           ctrl.state_nxt <= S_IDLE;
-        else -- cache MISS
-          ctrl.state_nxt <= S_CACHE_MISS;
+        else -- cache miss
+          ctrl.state_nxt <= S_CACHE_MISS; -- go write to block
         end if;
 
       when S_CACHE_MISS => -- 
@@ -310,7 +336,7 @@ begin
     invalidate_i   => cache.clear,          -- invalidate whole cache
     -- host cache access (read-only) --
     host_addr_i    => cache.host_addr,      -- access address
-    host_re_i      => host_re_i,            -- read enable
+    host_re_i      => cache.host_re,        -- read enable
     host_rdata_o   => cache.host_rdata,     -- read data
     -- access status (1 cycle delay to access) --
     hit_o          => cache.hit,            -- hit access
@@ -324,4 +350,4 @@ begin
     ctrl_invalid_i => cache.ctrl_invalid_we -- make selected block invalid
   );
 
-end neorv32_cache_rtl;
+end neorv32_dcache_rtl;
