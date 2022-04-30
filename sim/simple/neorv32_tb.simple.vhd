@@ -200,7 +200,7 @@ begin
     MEM_INT_DMEM_EN              => int_dmem_c,    -- implement processor-internal data memory
     MEM_INT_DMEM_SIZE            => dmem_size_c,   -- size of processor-internal data memory in bytes
     -- Internal Cache memory --
-    ICACHE_EN                    => false,          -- implement instruction cache
+    ICACHE_EN                    => true,          -- implement instruction cache
     ICACHE_NUM_BLOCKS            => 8,             -- i-cache: number of blocks (min 2), has to be a power of 2
     ICACHE_BLOCK_SIZE            => 64,            -- i-cache: block size in bytes (min 4), has to be a power of 2
     ICACHE_ASSOCIATIVITY         => 2,             -- i-cache: associativity / number of sets (1=direct_mapped), has to be a power of 2
