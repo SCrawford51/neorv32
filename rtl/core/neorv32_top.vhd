@@ -300,7 +300,7 @@ architecture neorv32_top_rtl of neorv32_top is
     fence : std_ulogic; -- fence instruction executed
     src   : std_ulogic; -- access source (1=instruction fetch, 0=data access)
   end record;
-  signal cpu_i, i_cache, cpu_d, d_cache, p_bus : bus_interface_t;
+  signal cpu_d, d_cache, p_bus : bus_d_interface_t;
 
   -- bus access error (from BUSKEEPER) --
   signal bus_error : std_ulogic;
@@ -608,22 +608,28 @@ begin
     )
     port map (
       -- global control --
-      clk_i        => clk_i,         -- global clock, rising edge
-      rstn_i       => sys_rstn,      -- global reset, low-active, async
-      clear_i      => cpu_i.fence,   -- cache clear
-      miss_o       => open,          -- cache miss
+      clk_i        => clk_i,           -- global clock, rising edge
+      rstn_i       => sys_rstn,        -- global reset, low-active, async
+      clear_i      => cpu_i.fence,     -- cache clear
+      miss_o       => open,            -- cache miss
       -- host controller interface --
-      host_addr_i  => cpu_i.addr,    -- bus access address
-      host_rdata_o => cpu_i.rdata,   -- bus read data
-      host_re_i    => cpu_i.re,      -- read enable
-      host_ack_o   => cpu_i.ack,     -- bus transfer acknowledge
-      host_err_o   => cpu_i.err,     -- bus transfer error
+      host_addr_i  => cpu_i.addr,      -- bus access address
+      host_rdata_o => cpu_i.rdata,     -- bus read data
+      host_wdata_i => (others => '0'), -- cache is read-only
+      host_ben_i   => (others => '0'), -- cache is read-only
+      host_we_i    => '0',             -- cache is read-only
+      host_re_i    => cpu_i.re,        -- read enable
+      host_ack_o   => cpu_i.ack,       -- bus transfer acknowledge
+      host_err_o   => cpu_i.err,       -- bus transfer error
       -- peripheral bus interface --
-      bus_addr_o   => i_cache.addr,  -- bus access address
-      bus_rdata_i  => i_cache.rdata, -- bus read data
-      bus_re_o     => i_cache.re,    -- read enable
-      bus_ack_i    => i_cache.ack,   -- bus transfer acknowledge
-      bus_err_i    => i_cache.err    -- bus transfer error
+      bus_addr_o   => i_cache.addr,    -- bus access address
+      bus_rdata_i  => i_cache.rdata,   -- bus read data
+      bus_wdata_o  => open,            -- cache is read-only
+      bus_ben_o    => open,            -- cache is read-only
+      bus_we_o     => open,            -- cache is read-only
+      bus_re_o     => i_cache.re,      -- read enable
+      bus_ack_i    => i_cache.ack,     -- bus transfer acknowledge
+      bus_err_i    => i_cache.err      -- bus transfer error
     );
   end generate;
 
@@ -674,9 +680,6 @@ begin
     );
   end generate;
 
-  -- TODO: do not use LOCKED data fetch --
-  d_cache.lock <= '0';
-
   neorv32_dcache_inst_false:
   if (DCACHE_EN = false) generate
     d_cache.addr  <= cpu_d.addr;
@@ -708,7 +711,6 @@ begin
     ca_bus_ben_i   => d_cache.ben,   -- byte enable
     ca_bus_we_i    => d_cache.we,    -- write enable
     ca_bus_re_i    => d_cache.re,    -- read enable
-    ca_bus_lock_i  => d_cache.lock,  -- exclusive access request
     ca_bus_ack_o   => d_cache.ack,   -- bus transfer acknowledge
     ca_bus_err_o   => d_cache.err,   -- bus transfer error
     -- controller interface b --
