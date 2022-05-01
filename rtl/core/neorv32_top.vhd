@@ -591,12 +591,11 @@ begin
   -- -------------------------------------------------------------------------------------------
   neorv32_icache_inst_true:
   if (ICACHE_EN = true) generate
-    neorv32_icache_inst: neorv32_cache
+    neorv32_icache_inst: neorv32_icache
     generic map (
-      CACHE_NUM_BLOCKS  => ICACHE_NUM_BLOCKS,    -- number of blocks (min 2), has to be a power of 2
-      CACHE_BLOCK_SIZE  => ICACHE_BLOCK_SIZE,    -- block size in bytes (min 4), has to be a power of 2
-      ASSOCIATIVITY     => ICACHE_ASSOCIATIVITY, -- associativity / number of sets (1=direct_mapped), has to be a power of 2
-      CACHE_REPLACE_POL => ICACHE_REPLACE_POL    -- cache replacement policy; 1=LRU, 2=Pseudo-LRU, 3=FIFO, 4=Random
+      ICACHE_NUM_BLOCKS  => ICACHE_NUM_BLOCKS,    -- number of blocks (min 2), has to be a power of 2
+      ICACHE_BLOCK_SIZE  => ICACHE_BLOCK_SIZE,    -- block size in bytes (min 4), has to be a power of 2
+      ICACHE_NUM_SETS   => ICACHE_ASSOCIATIVITY  -- associativity / number of sets (1=direct_mapped), has to be a power of 2
     )
     port map (
       -- global control --
@@ -644,7 +643,7 @@ begin
   -- -------------------------------------------------------------------------------------------
   neorv32_dcache_inst_true:
   if (DCACHE_EN = true) generate
-    neorv32_dcache_inst: neorv32_cache
+    neorv32_dcache_inst: neorv32_dcache
     generic map (
       CACHE_NUM_BLOCKS  => DCACHE_NUM_BLOCKS,    -- number of blocks (min 2), has to be a power of 2
       CACHE_BLOCK_SIZE  => DCACHE_BLOCK_SIZE,    -- block size in bytes (min 4), has to be a power of 2
